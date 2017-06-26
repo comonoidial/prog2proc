@@ -53,9 +53,11 @@ data Action l
    = Logic String (Exp l)
    | Receive String
    | Emit (Exp l)
-   | Alloc String
+   | Alloc String (Exp l)
    | Load String String
    | Store String (Exp l)
+   | Start String String [Exp l]
+   | Finish String String
    deriving Show
 
 splitSeq :: Show l => Source -> [Stmt l] -> [Cycle () l]
@@ -69,7 +71,7 @@ splitSeq s = splitS [] where
    splitS xs (Generator _ r (InfixApp _ (Var _ (UnQual _ (Ident _ "call"))) (QVarOp _ (UnQual _ (Symbol _ "$"))) c) : ys)
       | (Var _ (UnQual _ (Ident _ f)) : as) <- flattenApps c = Cycle () s (reverse xs) (Call f as) : splitSeq (Results [getArg r]) ys
    splitS xs (Generator _ r (Var _ (UnQual _ (Ident _ "receive"))) : ys) = splitS (Receive (getArg r) : xs) ys
-   splitS xs (Generator _ r (Var _ (UnQual _ (Ident _ "alloc"))) : ys) = splitS (Alloc (getArg r) : xs) ys
+   splitS xs (Generator _ r (App _ (Var _ (UnQual _ (Ident _ "alloc"))) i) : ys) = splitS (Alloc (getArg r) i : xs) ys
    splitS xs (Generator _ x (App _ (Var _ (UnQual _ (Ident _ "use"))) (Var _ (UnQual _ (Ident _ r)))) : ys) = splitS (Load (getArg x) r : xs) ys
    splitS xs (LetStmt _ (BDecls _ [PatBind _ r (UnGuardedRhs _ e) _]) : ys) = splitS (Logic (getArg r) e : xs) ys
    splitS xs (Qualifier _ (App _ (Var _ (UnQual _ (Ident _ "emit"))) e) : ys) = splitS (Emit e : xs) ys
@@ -166,6 +168,7 @@ usedVarsA :: Show l => Action l -> [String]
 usedVarsA (Logic _ e) = usedVarsE e
 usedVarsA (Emit    e) = usedVarsE e
 usedVarsA (Store _ e) = usedVarsE e
+usedVarsA (Alloc _ e) = usedVarsE e
 usedVarsA _           = []
 
 usedVarsT :: Show l => Target l -> [String]

@@ -37,13 +37,17 @@ data SeqAction s i o a where
    Clock   :: SeqAction s i o ()
    Receive :: SeqAction s i o i
    Emit    :: a -> SeqAction s i a ()
-   Alloc   :: SeqAction s i o (Ref s a)
+   Alloc   :: a -> SeqAction s i o (Ref s a)
    Load    :: Ref s a -> SeqAction s i o a
    Store   :: Ref s a -> a -> SeqAction s i o ()
-   Start   :: (x -> SeqLogic s () () a) -> x -> SeqAction s i o (Coproc s a)
+   Start   :: SeqLogic s () () a -> SeqAction s i o (Coproc s a)
    Finish  :: Coproc s a -> SeqAction s i o a
 
-newtype Ref s a = Ref (STRef s a)
+data Ref s a = Ref (STRef s a) | IxRef Int (Ref s [a])
+
+indexRef :: Int -> Ref s [a] -> Ref s a
+indexRef = IxRef
+
 newtype Coproc s a = Coproc (STRef s (CoProStatus, SeqLogic s () () a))
 
 data CoProStatus = Active | CycleRun | Finished deriving Show
@@ -73,17 +77,17 @@ interpretCycle (mi, mo) cps (Receive `Then` r) = case mi of
 interpretCycle (mi, mo) cps (Emit x  `Then` r) = case mo of
    Nothing -> interpretCycle (mi, Just x) cps (r ())
    Just _  -> error "multiple emits in one cycle"
-interpretCycle (mi, mo) cps (Alloc `Then` r) = do
-   p <- newSTRef (error "reading uninitialized reference") 
+interpretCycle (mi, mo) cps (Alloc i `Then` r) = do
+   p <- newSTRef i
    interpretCycle (mi, mo) cps (r (Ref p))
-interpretCycle (mi, mo) cps (Load (Ref p) `Then` r) = do
-   x <- readSTRef p
+interpretCycle (mi, mo) cps (Load p `Then` r) = do
+   x <- readRef p
    interpretCycle (mi, mo) cps (r x)
-interpretCycle (mi, mo) cps (Store (Ref p) x `Then` r) = do
-   writeSTRef p x
+interpretCycle (mi, mo) cps (Store p x `Then` r) = do
+   writeRef p x
    interpretCycle (mi, mo) cps (r ())
-interpretCycle (mi, mo) cps (Start p i `Then` r) = do
-   cpr <- fmap Coproc (newSTRef (Active, p i))            -- TODO maybe delay input by starting with CycleRun status
+interpretCycle (mi, mo) cps (Start p `Then` r) = do
+   cpr <- fmap Coproc (newSTRef (Active, p))            -- TODO maybe delay input by starting with CycleRun status
    let cpx = CoproElem cpr
    interpretCycle (mi, mo) (cpx : cps) (r cpr)
 interpretCycle (mi, mo) cps (Finish (Coproc cpr) `Then` r) = do
@@ -115,3 +119,15 @@ runCoproCycle (CoproElem (Coproc cp)) = do
         writeSTRef cp (Active, p')
         return True
       Finished -> return False
+
+readRef :: Ref s a -> ST s a
+readRef (Ref r) = readSTRef r
+readRef (IxRef i r) = fmap (!!i) (readRef r)
+
+writeRef :: Ref s a -> a -> ST s ()
+writeRef (Ref r) x = writeSTRef r x
+writeRef (IxRef i r) x = modifyRef r ((\(xs, _:ys) -> xs ++ x : ys) . splitAt i)
+
+modifyRef :: Ref s a -> (a -> a) -> ST s ()
+modifyRef (Ref r) f = modifySTRef r f
+modifyRef (IxRef i r) f = modifyRef r ((\(xs, x:ys) -> xs ++ f x : ys) . splitAt i)

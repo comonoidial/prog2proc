@@ -27,8 +27,8 @@ receive = command Receive
 emit :: a -> SeqLogic s i a ()
 emit = command . Emit
 
-alloc :: SeqLogic s i o (Ref s a)
-alloc = command Alloc
+alloc :: a -> SeqLogic s i o (Ref s a)
+alloc = command . Alloc
 
 use :: Ref s a -> SeqLogic s i o a
 use = command . Load
@@ -36,8 +36,11 @@ use = command . Load
 (<~) :: Ref s a -> a -> SeqLogic s i o ()
 (<~) p x = command (Store p x)
 
-start :: (x -> SeqLogic s () () a) -> x -> SeqLogic s i o (Coproc s a)
-start cp i = command (Start cp i)
+(?) :: Ref s [a] -> Int -> Ref s a
+r ? i = indexRef i r
+
+start :: SeqLogic s () () a -> SeqLogic s i o (Coproc s a)
+start = command . Start
 
 finish :: Coproc s a -> SeqLogic s i o a
 finish = command . Finish

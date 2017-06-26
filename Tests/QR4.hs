@@ -26,10 +26,8 @@ fac n = do
 
 linFib :: SeqLogic s () Int ()
 linFib = do
-   n <- alloc
-   n <~ 0
-   m <- alloc
-   m <~ 1
+   n <- alloc 0
+   m <- alloc 1
    loop 0 10 $ \ i -> do
       x <- use n
       y <- use m
@@ -40,10 +38,8 @@ linFib = do
 
 linFibCo :: () -> SeqLogic s () () Int
 linFibCo x = do
-   n <- alloc
-   n <~ 0
-   m <- alloc
-   m <~ 1
+   n <- alloc 0
+   m <- alloc 1
    loop 0 10 $ \ i -> do
       x <- use n
       y <- use m
@@ -108,7 +104,7 @@ qr = do
 
 {-
    clock
-   lfc <- start linFibCo ()
+   lfc <- start $ linFibCo ()
    clock
    n <- finish lfc
    clock
