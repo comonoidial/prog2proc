@@ -374,8 +374,6 @@ sim ds cs@(c:_) = let (a, b, o, g, f) = step ds c in let x = o a b in sim (g x d
 {- -} -- *** introduce encoding for each component
 (#) :: [a] -> Int -> a
 (#) = (!!)
-popSnd (x:y:s) = (x:s)
-popSndN n xs = iterate popSnd xs !! (fromIntegral n)
 call f (x:xs) = f:(succ x):xs
 nextPC (x:xs) = succ x : xs
 condSkip 0 (x:xs) = succ (succ x) : xs
@@ -384,36 +382,33 @@ data Input = S Int | I Word32
 selInput ds (S i) = ds#i
 selInput _  (I x) = x
 
-data Label = GCD | T1 | E1 | CA | CB | N1 | N2 | N3 | N4 | CC | N5 | CD | N6 | DZs | CE | N7 | CZs | T2 | E2 | N8 | CF | N9 deriving (Enum,Show)
+data Label = GCD | T1 | E1 | CA | CB | N1 | N2 | N3 | N4 | CC | N5 | CD | DZs | CE | CZs | T2 | E2 | N8 | CF  deriving (Enum,Show)
 type DataStack = [Word32]
 type CtrlStack = [Label]
 data Oper = Const | Plus | Sub | Or | Min | Max | ShR | ShL | IsEq | IsOdd deriving Show
-data StAction = Keep | Pop | Push | Alter | PopSN
+data StAction = Keep | Push | PushAfterPop Int
 data Ctrl = NextPC | Return | CondSkip | Call Label
 
 lookup :: Label -> (Input, Input, Oper, StAction, Ctrl)
-lookup GCD = (S 0 , I 0, IsEq , Keep , CondSkip)  -- SkipOnEq (S 0) (I 0)
-lookup T1  = (I 0 , I 0, Const, Pop  , Return)    -- ReturnPop
-lookup E1  = (S 1 , I 0, Const, Push , Call DZs)  -- PushCall (S 1) DZs
-lookup CA  = (S 1 , I 0, Const, Push , Call DZs)  -- PushCall (S 1) DZs
-lookup CB  = (S 1 , S 0, Min  , Push , NextPC)    -- Minimum (S 1) (S 0)
-lookup N1  = (S 2 , S 1, Max  , Push , NextPC)    -- Maximum (S 2) (S 0)
-lookup N2  = (S 0 , S 1, Sub  , Push , NextPC)    -- Subtract (S 0) (S 1)
-lookup N3  = (S 2 , I 0, Const, Push , NextPC)    -- Push (S 2)
-lookup N4  = (S 1 , I 0, Const, Push , Call GCD)  -- PushCall (S 1) GCD
-lookup CC  = (S 7 , S 6, Or   , Push , NextPC)    -- BitOr (S 7) (S 6)
-lookup N5  = (S 0 , I 0, Const, Push , Call CZs)  -- PushCall (S 0) CZs
-lookup CD  = (S 2 , S 0, ShL  , Push , NextPC)    -- ShiftL (S 2) (S 0)
-lookup N6  = (I 10, I 0, Const, PopSN, Return)    -- ReturnClear 10
-lookup DZs = (S 0 , I 0, Const, Push , Call CZs)  -- PushCall (S 0) CZs
-lookup CE  = (S 1 , S 0, ShR  , Push , NextPC)    -- ShiftR (S 1) (S 0)
-lookup N7  = (I 2 , I 0, Const, PopSN, Return)    -- ReturnClear 2
-lookup CZs = (S 0 , I 0, IsOdd, Keep , CondSkip)  -- SkipOnOdd (S 0)
-lookup T2  = (I 0 , I 0, Const, Alter, Return)    -- ReturnAlter (I 0)
-lookup E2  = (S 0 , I 1, ShR  , Push , NextPC)    -- ShiftR (S 0) (I 1)
-lookup N8  = (S 0 , I 0, Const, Push , Call CZs)  -- PushCall (S 0) CZs
-lookup CF  = (S 0 , I 1, Plus , Push , NextPC)    -- Plus (S 0) (I 1)
-lookup N9  = (I 3 , I 0, Const, PopSN, Return)    -- ReturnClear 3
+lookup GCD = (S 0 , I 0, IsEq , Keep           , CondSkip)  -- SkipOnEq (S 0) (I 0)
+lookup T1  = (S 1 , I 0, Const, PushAfterPop 2 , Return)    -- ReturnPop
+lookup E1  = (S 1 , I 0, Const, Push           , Call DZs)  -- PushCall (S 1) DZs
+lookup CA  = (S 1 , I 0, Const, Push           , Call DZs)  -- PushCall (S 1) DZs
+lookup CB  = (S 1 , S 0, Min  , Push           , NextPC)    -- Minimum (S 1) (S 0)
+lookup N1  = (S 2 , S 1, Max  , Push           , NextPC)    -- Maximum (S 2) (S 0)
+lookup N2  = (S 0 , S 1, Sub  , Push           , NextPC)    -- Subtract (S 0) (S 1)
+lookup N3  = (S 2 , I 0, Const, Push           , NextPC)    -- Push (S 2)
+lookup N4  = (S 1 , I 0, Const, Push           , Call GCD)  -- PushCall (S 1) GCD
+lookup CC  = (S 7 , S 6, Or   , Push           , NextPC)    -- BitOr (S 7) (S 6)
+lookup N5  = (S 0 , I 0, Const, Push           , Call CZs)  -- PushCall (S 0) CZs
+lookup CD  = (S 2 , S 0, ShL  , PushAfterPop 10, Return)    -- ShiftL (S 2) (S 0)
+lookup DZs = (S 0 , I 0, Const, Push           , Call CZs)  -- PushCall (S 0) CZs
+lookup CE  = (S 1 , S 0, ShR  , PushAfterPop 2 , Return)    -- ShiftR (S 1) (S 0)
+lookup CZs = (S 0 , I 0, IsOdd, Keep           , CondSkip)  -- SkipOnOdd (S 0)
+lookup T2  = (I 0 , I 0, Const, PushAfterPop 1 , Return)    -- ReturnAlter (I 0)
+lookup E2  = (S 0 , I 1, ShR  , Push           , NextPC)    -- ShiftR (S 0) (I 1)
+lookup N8  = (S 0 , I 0, Const, Push           , Call CZs)  -- PushCall (S 0) CZs
+lookup CF  = (S 0 , I 1, Plus , PushAfterPop 3 , Return)    -- Plus (S 0) (I 1)
 
 alu :: Oper -> Word32 -> Word32 -> Word32
 alu Const x _ = x
@@ -428,11 +423,9 @@ alu IsEq  x y = if x == y then 1 else 0
 alu IsOdd x _ = if odd x then 1 else 0
 
 stackMod :: StAction -> Word32 -> DataStack -> DataStack
-stackMod Keep  _ = keep
-stackMod Pop   _ = pop
-stackMod Push  x = push x
-stackMod Alter x = alter x
-stackMod PopSN x = popSndN x
+stackMod Keep             _ = keep
+stackMod Push             x = push x
+stackMod (PushAfterPop n) x = push x . (\s -> iterate pop s !! n)
 
 ctrl :: Ctrl -> Word32 -> CtrlStack -> CtrlStack
 ctrl NextPC   _ = nextPC
