@@ -73,6 +73,9 @@ splitSeq s = splitS [] where
    splitS xs (Generator _ r (Var _ (UnQual _ (Ident _ "receive"))) : ys) = splitS (Receive (getArg r) : xs) ys
    splitS xs (Generator _ r (App _ (Var _ (UnQual _ (Ident _ "alloc"))) i) : ys) = splitS (Alloc (getArg r) i : xs) ys
    splitS xs (Generator _ x (App _ (Var _ (UnQual _ (Ident _ "use"))) (Var _ (UnQual _ (Ident _ r)))) : ys) = splitS (Load (getArg x) r : xs) ys
+   splitS xs (Generator _ x (App _ (Var _ (UnQual _ (Ident _ "finish"))) (Var _ (UnQual _ (Ident _ r)))) : ys) = splitS (Finish (getArg x) r : xs) ys
+   splitS xs (Generator _ x (InfixApp _ (Var _ (UnQual _ (Ident _ "start"))) (QVarOp _ (UnQual _ (Symbol _ "$"))) s) : ys) 
+      | (Var _ (UnQual _ (Ident _ c)) : as) <- flattenApps s = splitS (Start (getArg x) c as : xs) ys
    splitS xs (LetStmt _ (BDecls _ [PatBind _ r (UnGuardedRhs _ e) _]) : ys) = splitS (Logic (getArg r) e : xs) ys
    splitS xs (Qualifier _ (App _ (Var _ (UnQual _ (Ident _ "emit"))) e) : ys) = splitS (Emit e : xs) ys
    splitS xs [Qualifier _ (App _ (Var _ (UnQual _ (Ident _ "return"))) e)] = [Cycle () s (reverse xs) (Return [e])]
@@ -89,10 +92,11 @@ type VarDefs = [String]
 
 withVarDefs :: Cycle a l -> Cycle VarDefs l
 withVarDefs (Cycle _ s xs t) = Cycle (concatMap vdefs xs) s xs t where
-   vdefs (Logic x _) = [x]
-   vdefs (Receive x) = [x]
-   vdefs (Load x _)  = [x]
-   vdefs _           = []
+   vdefs (Logic x _)  = [x]
+   vdefs (Receive x)  = [x]
+   vdefs (Load x _ )  = [x]
+   vdefs (Finish x _) = [x]
+   vdefs _            = []
 
 sourceVarDefs :: Source -> [String]
 sourceVarDefs (Args _   xs) = xs
@@ -169,6 +173,7 @@ usedVarsA (Logic _ e) = usedVarsE e
 usedVarsA (Emit    e) = usedVarsE e
 usedVarsA (Store _ e) = usedVarsE e
 usedVarsA (Alloc _ e) = usedVarsE e
+usedVarsA (Start _ _ xs) = concatMap usedVarsE xs
 usedVarsA _           = []
 
 usedVarsT :: Show l => Target l -> [String]
