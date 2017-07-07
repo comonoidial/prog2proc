@@ -12,7 +12,7 @@ test = do
    ParseOk pm <- parseFile ("." ++ pathSeparator : "Tests" ++ pathSeparator : "QR4.hs")
    let Module _ (Just (ModuleHead _ (ModuleName _ m) _ _)) ps is ds = fmap (const ()) pm
    let mh'= Just (ModuleHead () (ModuleName () (m++"_Proc")) Nothing Nothing)
-   let ds' = map (fmap (withUsedLocals . map withVarDefs)) $ lefts $ map getFunDec ds
+   let ds' = map (fmap (withStoredVars . withUsedLocals . map withVarDefs)) $ lefts $ map getFunDec ds
    let fs = map fst ds'
    let os = filter (\x -> case x of {TypeSig _ [Ident _ f] _ -> f `notElem` fs; _ -> True}) $ rights (map getFunDec ds) 
    mapM_ (\(f,cs) -> (putStrLn f >> mapM_ (putStrLn . show) cs)) ds'
@@ -113,6 +113,11 @@ withUsedLocals = withULs [] where
       vs' = sourceVarDefs s ++ ds ++ vs
       us  = nub $ filter (`elem` vs') (concatMap usedVarsA xs ++ usedVarsT t)
 
+type StoredDefs = [String]
+
+withStoredVars :: [Cycle (VarDefs, UsedLocals) l] -> [Cycle (StoredDefs, UsedLocals) l]
+withStoredVars = id -- TODO only keep vars live across cycle boundaries
+
 data Clause = Clause {cName :: String, cArgs :: [Maybe String], cExp :: Exp (), cWhere :: Maybe (Binds ())}
 
 clauseCon :: Clause -> Exp ()
@@ -138,12 +143,13 @@ aluBody c xs [] = Nothing
 aluBody c xs es = Just $ Match () (Ident () "alu") (PApp () (UnQual () (Ident () c)) [] : map (\x -> (PVar () (Ident () x))) xs) (UnGuardedRhs () (Tuple () Boxed $ map (Var () . UnQual () . Ident () . fst) es)) $
    Just (BDecls () $ map (\(x,e) -> PatBind () (PVar () (Ident () x)) (UnGuardedRhs () $ fmap (const ()) e) Nothing) es)
 
-genCode :: Show l => [Cycle (a, UsedLocals) l] -> [Decl ()]
+genCode :: Show l => [Cycle (StoredDefs, UsedLocals) l] -> [Decl ()]
 genCode cs = [genDataCon "Label" (map (\(c,_,_)->c) ds), componentCode "microCode" mc, genDataCon "AluOp" ("AluNop" : map cName acs'), componentCode "alu" acs'] where
    acs = zipWith genAluClause [0..] cs
    acs' = catMaybes acs
    ds = genControl 0 [] cs
-   mc = zipWith (\(c,xs,e) ac -> Clause c (map Just xs) (Tuple () Boxed [e, ac]) Nothing) ds $ map (maybe (Con () (UnQual () (Ident () "AluNop"))) clauseCon) acs
+   mls = genMemOps ([],[]) cs
+   mc = zipWith3 (\(c,xs,e) ac ls -> Clause c (map Just xs) (Tuple () Boxed ([e, ac] ++ ls)) Nothing) ds (map (maybe (Con () (UnQual () (Ident () "AluNop"))) clauseCon) acs) mls
 
 genControl :: Int -> [String] -> [Cycle a l] -> [(String, [String] , Exp ())]
 genControl n ls [] = []
@@ -167,6 +173,24 @@ genDataCon :: String -> [String] -> Decl ()
 genDataCon d xs = DataDecl () (DataType ()) Nothing (DHead () (Ident () d)) 
    (map (\x -> QualConDecl () Nothing Nothing (ConDecl () (Ident () x) [])) xs)
    (Just (Deriving () [IRule () Nothing Nothing (IHCon () (UnQual () (Ident () "Enum"))),IRule () Nothing Nothing (IHCon () (UnQual () (Ident () "Show")))]))
+
+genMemOps :: ([String],[String]) -> [Cycle (StoredDefs, UsedLocals) l] -> [[Exp ()]]
+genMemOps (v1s, v2s) [] = []
+genMemOps (v1s, v2s) (Cycle (ns, ls) s _ _ : cs) = (lcs ++ [genStore v1s' n1s, genStore v2s' n2s]) : genMemOps (n1s++v1s', n2s++v2s') cs where
+   (n1s, n2s) = partition ((< 'p') . head) ns
+   (v1s', v2s') = loadableVars (v1s, v2s) s
+   (l1s, l2s) = partition ((< 'p') . head) ls
+   lcs = take 2 (map (genLoad v1s') (l1s ++ repeat "")) ++ take 2 (map (genLoad v2s') (l2s ++ repeat ""))
+   genLoad vs x = Lit () (Int () i (show i)) where i = maybe 0 fromIntegral $ elemIndex x vs
+   genStore vs []    = Con () (UnQual () (Ident () "Nothing"))
+   genStore vs (x:_) = App () (Con () (UnQual () (Ident () "Just"))) (Lit () (Int () i (show i))) 
+                        where i = fromIntegral $ length vs
+
+loadableVars :: ([String],[String]) -> Source -> ([String],[String])
+loadableVars (v1s, v2s) (Args _  xs) = partition ((< 'p') . head) xs
+loadableVars (v1s, v2s) (Results rs) = let (xs, ys) = partition ((< 'p') . head) rs in (xs ++ v1s, ys ++ v2s)
+loadableVars (v1s, v2s) _            = (v1s, v2s)
+
 
 usedVarsA :: Show l => Action l -> [String]
 usedVarsA (Logic _ e) = usedVarsE e
