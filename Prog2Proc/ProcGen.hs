@@ -144,7 +144,7 @@ aluBody c xs es = Just $ Match () (Ident () "alu") (PApp () (UnQual () (Ident ()
    Just (BDecls () $ map (\(x,e) -> PatBind () (PVar () (Ident () x)) (UnGuardedRhs () $ fmap (const ()) e) Nothing) es)
 
 genCode :: Show l => [Cycle (StoredDefs, UsedLocals) l] -> [Decl ()]
-genCode cs = [genDataCon "Label" (map (\(c,_,_)->c) ds), componentCode "microCode" mc, genDataCon "AluOp" ("AluNop" : map cName acs'), componentCode "alu" acs'] where
+genCode cs = [ctrlData, genDataCon "Label" (map (\(c,_,_)->c) ds), control, componentCode "microCode" mc, genDataCon "AluOp" ("AluNop" : map cName acs'), componentCode "alu" acs'] where
    acs = zipWith genAluClause [0..] cs
    acs' = catMaybes acs
    ds = genControl 0 [] cs
@@ -190,6 +190,37 @@ loadableVars :: ([String],[String]) -> Source -> ([String],[String])
 loadableVars (v1s, v2s) (Args _  xs) = partition ((< 'p') . head) xs
 loadableVars (v1s, v2s) (Results rs) = let (xs, ys) = partition ((< 'p') . head) rs in (xs ++ v1s, ys ++ v2s)
 loadableVars (v1s, v2s) _            = (v1s, v2s)
+
+ctrlData :: Decl ()
+ctrlData = DataDecl () (DataType ()) Nothing (DHead () (Ident () "Ctrl")) 
+   [QualConDecl () Nothing Nothing (ConDecl () (Ident () "NextPC") [])
+   ,QualConDecl () Nothing Nothing (ConDecl () (Ident () "Return") [])
+   ,QualConDecl () Nothing Nothing (ConDecl () (Ident () "Branch") [TyCon () (UnQual () (Ident () "Label"))])
+   ,QualConDecl () Nothing Nothing (ConDecl () (Ident () "Call") [TyCon () (UnQual () (Ident () "Label"))])
+   ,QualConDecl () Nothing Nothing (ConDecl () (Ident () "Jump") [TyCon () (UnQual () (Ident () "Label"))])
+   ] Nothing
+
+control :: Decl ()
+control = FunBind () 
+   [Match () (Ident () "ctrl") 
+     [PApp () (UnQual ()(Ident () "NextPC")) [],PWildCard (),PVar () (Ident () "nPC"),PVar () (Ident () "cSP"),PVar () (Ident () "retPC")]
+     (UnGuardedRhs () (Tuple () Boxed [Var () (UnQual () (Ident () "cSP")),Con () (UnQual () (Ident () "Nothing")),Var () (UnQual () (Ident () "nPC"))])) Nothing
+   ,Match () (Ident () "ctrl") 
+      [PApp () (UnQual () (Ident () "Return")) [],PWildCard (),PVar () (Ident () "nPC"),PVar () (Ident () "cSP"),PVar () (Ident () "retPC")]
+      (UnGuardedRhs () (Tuple () Boxed [InfixApp () (Var () (UnQual () (Ident () "cSP"))) (QVarOp () (UnQual () (Symbol () "-"))) (Lit () (Int () 1 "1")),Con () (UnQual () (Ident () "Nothing")),Var () (UnQual () (Ident () "retPC"))])) Nothing
+   ,Match () (Ident () "ctrl") 
+      [PParen () (PApp () (UnQual () (Ident () "Branch")) [PVar () (Ident () "e")]),PLit () (Signless ()) (Int () 0 "0"),PVar () (Ident () "nPC"),PVar () (Ident () "cSP"),PVar () (Ident () "retPC")]
+     (UnGuardedRhs () (Tuple () Boxed [Var () (UnQual () (Ident () "cSP")),Con () (UnQual () (Ident () "Nothing")),Var () (UnQual () (Ident () "e"))])) Nothing
+   ,Match () (Ident () "ctrl") 
+      [PParen () (PApp () (UnQual () (Ident () "Branch")) [PVar () (Ident () "e")]),PVar () (Ident () "c"),PVar () (Ident () "nPC"),PVar () (Ident () "cSP"),PVar () (Ident () "retPC")]
+      (UnGuardedRhs () (Tuple () Boxed [Var () (UnQual () (Ident () "cSP")),Con () (UnQual () (Ident () "Nothing")),Var () (UnQual () (Ident () "nPC"))])) Nothing
+   ,Match () (Ident () "ctrl") 
+      [PParen () (PApp () (UnQual () (Ident () "Call")) [PVar () (Ident () "f")]),PWildCard (),PVar () (Ident () "nPC"),PVar () (Ident () "cSP"),PVar () (Ident () "retPC")] 
+      (UnGuardedRhs () (Tuple () Boxed [InfixApp () (Var () (UnQual () (Ident () "cSP"))) (QVarOp () (UnQual () (Symbol () "+"))) (Lit () (Int () 1 "1")),App () (Con () (UnQual ()(Ident () "Just"))) (Tuple () Boxed [InfixApp () (Var () (UnQual () (Ident () "cSP"))) (QVarOp () (UnQual () (Symbol() "+"))) (Lit () (Int () 1 "1")),Var () (UnQual () (Ident () "nPC"))]),Var () (UnQual () (Ident () "f"))])) Nothing
+   ,Match () (Ident () "ctrl") 
+      [PParen () (PApp () (UnQual () (Ident () "Jump")) [PVar () (Ident () "f")]),PWildCard (),PVar () (Ident () "nPC"),PVar () (Ident () "cSP"),PVar () (Ident () "retPC")] 
+     (UnGuardedRhs () (Tuple () Boxed [Var () (UnQual () (Ident () "cSP")),Con () (UnQual () (Ident () "Nothing")),Var () (UnQual () (Ident () "f"))])) Nothing
+   ]
 
 
 usedVarsA :: Show l => Action l -> [String]
