@@ -239,14 +239,14 @@ call f (x:xs) = f:(succ x):xs
 returning = pop
 nextPC (x:xs) = succ x : xs
 equals x  y = x == y
-condSkip True  (x:xs) = succ x : xs
-condSkip False (x:xs) = succ (succ x) : xs
+branch _ True  (x:xs) = succ x : xs
+branch e False (x:xs) = e : xs
 
 type StackAction a = [a] -> [a]
 data Label = GCD | T1 | E1 | CA | CB | N1 | N2 | N3 | N4 | CC | N5 | CD | N6 | DropZs | CE | N7 | CntZs | T2 | E2 | N8 | CF | N9 deriving Enum
 type DataStack = [Word32]
 step :: DataStack -> Label -> (StackAction Word32, StackAction Label)
-step ds GCD = (keep                    , condSkip (equals (ds#0) 0))
+step ds GCD = (keep                    , branch E1 (equals (ds#0) 0))
 step ds T1  = (pop                     , returning)
 step ds E1  = (push (ds#1)             , call DropZs)
 step ds CA  = (push (ds#1)             , call DropZs)
@@ -262,7 +262,7 @@ step ds N6  = (popSndN 10              , returning)
 step ds DropZs = (push (ds#0)          , call CntZs)
 step ds CE  = (push ((ds#1) >>> (ds#0)), nextPC)
 step ds N7  = (popSndN 2               , returning)
-step ds CntZs = (keep                  , condSkip (odd (ds#0)))
+step ds CntZs = (keep                  , branch E2 (odd (ds#0)))
 step ds T2  = (alter 0                 , returning)
 step ds E2  = (push ((ds#0) >>> 1)     , nextPC)
 step ds N8  = (push (ds#0)             , call CntZs)
@@ -285,8 +285,8 @@ returning _ = pop
 nextPC _ (x:xs) = succ x : xs
 equals x y = if x == y then 1 else 0
 isOdd x = if odd x then 1 else 0
-condSkip 0 (x:xs) = succ (succ x) : xs
-condSkip _ (x:xs) = succ x : xs
+branch e 0 (x:xs) = e : xs
+branch _ _ (x:xs) = succ x : xs
 keep' _ = keep
 pop' _ = pop
 
@@ -294,7 +294,7 @@ type StackAction a = Word32 -> [a] -> [a]
 data Label = GCD | T1 | E1 | CA | CB | N1 | N2 | N3 | N4 | CC | N5 | CD | N6 | DZs | CE | N7 | CZs | T2 | E2 | N8 | CF | N9 deriving Enum
 type DataStack = [Word32]
 step :: DataStack -> Label -> (Word32, StackAction Word32, StackAction Label)
-step ds GCD = (equals (ds#0) 0  , keep'  , condSkip)
+step ds GCD = (equals (ds#0) 0  , keep'  , branch E1)
 step ds T1  = (0                , pop'   , returning)
 step ds E1  = (ds#1             , push   , call DZs)
 step ds CA  = (ds#1             , push   , call DZs)
@@ -310,7 +310,7 @@ step ds N6  = (10               , popSndN, returning)
 step ds DZs = (ds#0             , push   , call CZs)
 step ds CE  = ((ds#1) >>> (ds#0), push   , nextPC)
 step ds N7  = (2                , popSndN, returning)
-step ds CZs = (isOdd (ds#0)     , keep'  , condSkip)
+step ds CZs = (isOdd (ds#0)     , keep'  , branch E2)
 step ds T2  = (0                , alter  , returning)
 step ds E2  = ((ds#0) >>> 1     , push   , nextPC)
 step ds N8  = (ds#0             , push   , call CZs)
@@ -332,8 +332,8 @@ returning _ = pop
 nextPC _ (x:xs) = succ x : xs
 equals x y = if x == y then 1 else 0
 isOdd x _ = if odd x then 1 else 0
-condSkip 0 (x:xs) = succ (succ x) : xs
-condSkip _ (x:xs) = succ x : xs
+branch e 0 (x:xs) = e : xs
+branch _ _ (x:xs) = succ x : xs
 keep' _ = keep
 pop' _ = pop
 data Input = S Int | I Word32
@@ -343,7 +343,7 @@ type StackAction a = Word32 -> [a] -> [a]
 data Label = GCD | T1 | E1 | CA | CB | N1 | N2 | N3 | N4 | CC | N5 | CD | N6 | DZs | CE | N7 | CZs | T2 | E2 | N8 | CF | N9 deriving Enum
 type DataStack = [Word32]
 step :: DataStack -> Label -> (Word32, Word32, Word32 -> Word32 -> Word32, StackAction Word32, StackAction Label)
-step ds GCD = (ds#0, 0   , equals, keep'  , condSkip)
+step ds GCD = (ds#0, 0   , equals, keep'  , branch E1)
 step ds T1  = (0   , 0   , const , pop'   , returning)
 step ds E1  = (ds#1, 0   , const , push   , call DZs)
 step ds CA  = (ds#1, 0   , const , push   , call DZs)
@@ -359,7 +359,7 @@ step ds N6  = (10  , 0   , const , popSndN, returning)
 step ds DZs = (ds#0, 0   , const , push   , call CZs)
 step ds CE  = (ds#1, ds#0, (>>>) , push   , nextPC)
 step ds N7  = (2   , 0   , const , popSndN, returning)
-step ds CZs = (ds#0, 0   , isOdd , keep'  , condSkip)
+step ds CZs = (ds#0, 0   , isOdd , keep'  , branch E2)
 step ds T2  = (0   , 0   , const , alter  , returning)
 step ds E2  = (ds#0, 1   , (>>>) , push   , nextPC)
 step ds N8  = (ds#0, 0   , const , push   , call CZs)
@@ -376,8 +376,8 @@ sim ds cs@(c:_) = let (a, b, o, g, f) = step ds c in let x = o a b in sim (g x d
 (#) = (!!)
 call f (x:xs) = f:(succ x):xs
 nextPC (x:xs) = succ x : xs
-condSkip 0 (x:xs) = succ (succ x) : xs
-condSkip _ (x:xs) = succ x : xs
+branch e 0 (x:xs) = e : xs
+branch _ _ (x:xs) = succ x : xs
 data Input = S Int | I Word32
 selInput ds (S i) = ds#i
 selInput _  (I x) = x
@@ -387,28 +387,28 @@ type DataStack = [Word32]
 type CtrlStack = [Label]
 data Oper = Const | Plus | Sub | Or | Min | Max | ShR | ShL | IsEq | IsOdd deriving Show
 data StAction = Keep | Push | PushAfterPop Int
-data Ctrl = NextPC | Return | CondSkip | Call Label
+data Ctrl = NextPC | Return | Branch Label | Call Label
 
 lookup :: Label -> (Input, Input, Oper, StAction, Ctrl)
-lookup GCD = (S 0 , I 0, IsEq , Keep           , CondSkip)  -- SkipOnEq (S 0) (I 0)
-lookup T1  = (S 1 , I 0, Const, PushAfterPop 2 , Return)    -- ReturnPop
-lookup E1  = (S 1 , I 0, Const, Push           , Call DZs)  -- PushCall (S 1) DZs
-lookup CA  = (S 1 , I 0, Const, Push           , Call DZs)  -- PushCall (S 1) DZs
-lookup CB  = (S 1 , S 0, Min  , Push           , NextPC)    -- Minimum (S 1) (S 0)
-lookup N1  = (S 2 , S 1, Max  , Push           , NextPC)    -- Maximum (S 2) (S 0)
-lookup N2  = (S 0 , S 1, Sub  , Push           , NextPC)    -- Subtract (S 0) (S 1)
-lookup N3  = (S 2 , I 0, Const, Push           , NextPC)    -- Push (S 2)
-lookup N4  = (S 1 , I 0, Const, Push           , Call GCD)  -- PushCall (S 1) GCD
-lookup CC  = (S 7 , S 6, Or   , Push           , NextPC)    -- BitOr (S 7) (S 6)
-lookup N5  = (S 0 , I 0, Const, Push           , Call CZs)  -- PushCall (S 0) CZs
-lookup CD  = (S 2 , S 0, ShL  , PushAfterPop 10, Return)    -- ShiftL (S 2) (S 0)
-lookup DZs = (S 0 , I 0, Const, Push           , Call CZs)  -- PushCall (S 0) CZs
-lookup CE  = (S 1 , S 0, ShR  , PushAfterPop 2 , Return)    -- ShiftR (S 1) (S 0)
-lookup CZs = (S 0 , I 0, IsOdd, Keep           , CondSkip)  -- SkipOnOdd (S 0)
-lookup T2  = (I 0 , I 0, Const, PushAfterPop 1 , Return)    -- ReturnAlter (I 0)
-lookup E2  = (S 0 , I 1, ShR  , Push           , NextPC)    -- ShiftR (S 0) (I 1)
-lookup N8  = (S 0 , I 0, Const, Push           , Call CZs)  -- PushCall (S 0) CZs
-lookup CF  = (S 0 , I 1, Plus , PushAfterPop 3 , Return)    -- Plus (S 0) (I 1)
+lookup GCD = (S 0 , I 0, IsEq , Keep           , Branch E1)
+lookup T1  = (S 1 , I 0, Const, PushAfterPop 2 , Return)
+lookup E1  = (S 1 , I 0, Const, Push           , Call DZs)
+lookup CA  = (S 1 , I 0, Const, Push           , Call DZs)
+lookup CB  = (S 1 , S 0, Min  , Push           , NextPC)
+lookup N1  = (S 2 , S 1, Max  , Push           , NextPC)
+lookup N2  = (S 0 , S 1, Sub  , Push           , NextPC)
+lookup N3  = (S 2 , I 0, Const, Push           , NextPC)
+lookup N4  = (S 1 , I 0, Const, Push           , Call GCD)
+lookup CC  = (S 7 , S 6, Or   , Push           , NextPC)
+lookup N5  = (S 0 , I 0, Const, Push           , Call CZs)
+lookup CD  = (S 2 , S 0, ShL  , PushAfterPop 10, Return)
+lookup DZs = (S 0 , I 0, Const, Push           , Call CZs)
+lookup CE  = (S 1 , S 0, ShR  , PushAfterPop 2 , Return)
+lookup CZs = (S 0 , I 0, IsOdd, Keep           , Branch E2)
+lookup T2  = (I 0 , I 0, Const, PushAfterPop 1 , Return)
+lookup E2  = (S 0 , I 1, ShR  , Push           , NextPC)
+lookup N8  = (S 0 , I 0, Const, Push           , Call CZs)
+lookup CF  = (S 0 , I 1, Plus , PushAfterPop 3 , Return)
 
 alu :: Oper -> Word32 -> Word32 -> Word32
 alu Const x _ = x
@@ -428,10 +428,10 @@ stackMod Push             x = push x
 stackMod (PushAfterPop n) x = push x . (\s -> iterate pop s !! n)
 
 ctrl :: Ctrl -> Word32 -> CtrlStack -> CtrlStack
-ctrl NextPC   _ = nextPC
-ctrl Return   _ = pop
-ctrl CondSkip c = condSkip c
-ctrl (Call f) _ = call f
+ctrl NextPC     _ = nextPC
+ctrl Return     _ = pop
+ctrl (Branch e) c = branch e c
+ctrl (Call f  ) _ = call f
 
 sim :: DataStack -> [Label] -> Word32
 sim ds []       = top ds
