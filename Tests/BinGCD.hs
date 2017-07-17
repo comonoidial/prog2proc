@@ -21,41 +21,40 @@ top (x:xs) = x
 keep x = x
 
 binGCD :: Word32 -> Word32 -> Word32       
-binGCD u 0 = u
-binGCD u v =
-  let a = dropZeros u in
-  let b = dropZeros v in
-  let x = min a b in
-  let y = max a b in
-  binGCD x (y - x) <<< countZeros (u .|. v)
+binGCD x 0 = x
+binGCD x y =
+  let a = dropZeros x in
+  let b = dropZeros y in
+  let (s,g) = (min a b, max a b) in
+  binGCD s (g - s) <<< countZeros (x .|. y)
 
 dropZeros :: Word32 -> Word32
-dropZeros x = x >>> countZeros x
+dropZeros i = i >>> countZeros i
 
 countZeros :: Word32 -> Int
-countZeros x = if odd x then 0 else countZeros (x >>> 1) + 1
+countZeros n = if odd n then 0 else countZeros (n >>> 1) + 1
 
 {- -- *** Introducing names for all recursive calls
 binGCD :: Word32 -> Word32 -> Word32       
-binGCD u 0 = u
-binGCD u v =
-  let a = dropZeros u in
-  let b = dropZeros v in
-  let x = min a b in
-  let y = max a b in
-  let g = binGCD x (y - x) in
-  let e = countZeros (u .|. v) in
-  g <<< e
+binGCD x 0 = x
+binGCD x y =
+  let a = dropZeros x in
+  let b = dropZeros y in
+  let g = max a b in
+  let s = min a b in
+  let r = binGCD s (g - s) in
+  let z = countZeros (x .|. y) in
+  r <<< z
 
 dropZeros :: Word32 -> Word32
-dropZeros x = 
-  let s = countZeros x in
-  x >>> s
+dropZeros i = 
+  let s = countZeros i in
+  i >>> s
 
 countZeros :: Word32 -> Int
-countZeros x = if odd x then 0 
+countZeros n = if odd n then 0 
   else 
-  let c = countZeros (x >>> 1) in
+  let c = countZeros (n >>> 1) in
   c + 1
 -}
 
@@ -64,21 +63,21 @@ type StackAction = [Context] -> [Context]
 data State = BinGCD Word32 Word32 | DropZeros Word32 | CountZeros Word32 | R Word32 | R' Int
 data Context = CA Word32 Word32 | CB Word32 Word32 Word32 | CC Word32 Word32 Word32 Word32  | CD Word32 Word32 Word32 Word32 Word32 | CE Word32 | CF Word32
 step :: State -> Context -> (State, StackAction)
-step (BinGCD u v) _        = if v == 0 
-                        then (R u                 , nop)
-                        else (DropZeros u         , push (CA u v))
-step (R a) (CA u v)        = (DropZeros v         , alter (CB u v a))
-step (R b) (CB u v a)      = let x = min a b in
-                             let y = max a b in
-                             (BinGCD x (y - x)    , alter (CC u v a b))
-step (R g) (CC u v a b)    = (CountZeros (u .|. v), alter (CD u v a b g))
-step (R' e) (CD u v a b g) = (R (g <<< e)         , pop)
-step (DropZeros x) _       = (CountZeros x        , push (CE x))
-step (R' s) (CE x)         = (R (x >>> s)         , pop)
-step (CountZeros x) _      = if odd x
+step (BinGCD x y) _        = if y == 0 
+                        then (R x                 , nop)
+                        else (DropZeros x         , push (CA x y))
+step (R a) (CA x y)        = (DropZeros y         , alter (CB x y a))
+step (R b) (CB x y a)      = let g = max a b in
+                             let s = min a b in
+                             (BinGCD s (g - s)    , alter (CC x y a b))
+step (R r) (CC x y a b)    = (CountZeros (x .|. y), alter (CD x y a b g))
+step (R' z) (CD x y a b r) = (R (r <<< z)         , pop)
+step (DropZeros i) _       = (CountZeros i        , push (CE i))
+step (R' s) (CE i)         = (R (i >>> s)         , pop)
+step (CountZeros n) _      = if odd n
                         then (R' 0, nop)
-                        else (CountZeros (x >>> 1), push (CF x))
-step (R' c) (CF x)         = (R' (c + 1)          , pop)
+                        else (CountZeros (n >>> 1), push (CF n))
+step (R' c) (CF n)         = (R' (c + 1)          , pop)
 
 sim :: State -> [Context] -> Word32
 sim (R x) []   = x
@@ -88,31 +87,29 @@ sim s cs@(c:_) = let (s' ,f) = step s c in sim s' (f cs)
 
 {-  -- *** Introducing names for all non trival expression
 binGCD :: Word32 -> Word32 -> Word32       
-binGCD u 0 = u
-binGCD u v =
-  let a = dropZeros u in
-  let b = dropZeros v in
-  let x = min a b in
-  let y = max a b in
-  let z = y - x in
-  let g = binGCD x z in
-  let o = u .|. v in
+binGCD x 0 = x
+binGCD x y =
+  let a = dropZeros x in
+  let b = dropZeros y in
+  let g = max a b in
+  let s = min a b in
+  let d = g - s in
+  let r = binGCD s d in
+  let o = x .|. y in
   let e = countZeros o in
-  g <<< e
+  r <<< e
 
 dropZeros :: Word32 -> Word32
-dropZeros x = 
-  let s = countZeros x in
-  x >>> s
+dropZeros i = 
+  let s = countZeros i in
+  i >>> s
 
 countZeros :: Word32 -> Int
-countZeros x =
-  let o = odd x in
-  if o 
-    then 0 
-    else
-    let y = x >>> 1 in
-    let c = countZeros y in
+countZeros n = if odd n 
+  then 0 
+  else
+    let m = n >>> 1 in
+    let c = countZeros m in
     c + 1
 -}
 
@@ -122,30 +119,61 @@ data State = GCD Word32 Word32 | DropZs Word32 | CountZs Word32 | R Word32 | R' 
   | N3 Word32 Word32 Word32 Word32 Word32 Word32 Word32 | N4 Word32 Word32 Word32 Word32 Word32 Word32 Word32 Word32 Word32 | N5 Word32  Word32
 data Context = CA Word32 Word32 | CB Word32 Word32 Word32 | CC Word32 Word32 Word32 Word32 Word32 Word32 Word32 | CD Word32 Word32 Word32 Word32 Word32 Word32 Word32 Word32 Word32 | CE Word32 | CF Word32 Word32
 step :: State -> Context -> (State, StackAction)
-step (GCD u v) _              = if v == 0
-                           then (R u                   , keep)
-                           else (DropZs u              , push (CA u v))
-step (R a) (CA u v)           = (DropZs v              , alter (CB u v a))
-step (R b) (CB u v a)         = (N1 u v a b (min a b)  , pop)
-step (N1 u v a b x) _         = (N2 u v a b x (max a b), keep)
-step (N2 u v a b x y) _       = (N3 u v a b x y (y - x), keep)
-step (N3 u v a b x y z) _     = (BinGCD x z            , push (CC u v a b x y z))
-step (R g) (CC u v a b x y z) = (N4 u v a b x y z g (u .|. v), pop)
-step (N4 u v a b x y z g o) _ = (CountZs o, push (CD u v a b x y z g o))
-step (R' e) (CD u v a b x y z g o) = (R (g <<< e)      , pop)
-step (DropZs x) _             = (CountZs x             , push (CE x))
-step (R' s) (CE x)            = (R (x >>> s)           , pop)
-step (CountZs x) _            = if odd x
+step (GCD x y) _              = if y == 0
+                           then (R x                   , keep)
+                           else (DropZs x              , push (CA x y))
+step (R a) (CA x y)           = (DropZs y              , alter (CB x y a))
+step (R b) (CB x y a)         = (N1 x y a b (max a b)  , pop)
+step (N1 x y a b g) _         = (N2 x y a b g (min a b), keep)
+step (N2 x y a b g s) _       = (N3 x y a b g s (g - s), keep)
+step (N3 x y a b g s d) _     = (BinGCD s d            , push (CC x y a b g s d))
+step (R r) (CC x y a b s g d) = (N4 x y a b s g d r (x .|. y), pop)
+step (N4 x y a b s g d r o) _ = (CountZs o, push (CD x y a b s g d r o))
+step (R' e) (CD x y a b s g d r o) = (R (r <<< e)      , pop)
+step (DropZs i) _             = (CountZs i             , push (CE i))
+step (R' s) (CE i)            = (R (i >>> s)           , pop)
+step (CountZs n) _            = if odd n
                            then (R' 0                  , keep)
-                           else (N5 x (x >>> 1)        , keep)
-step (N5 x   y) _             = (CountZs y             , push (CF x y))
-step (R' c) (CF x y)          = (R' (c + 1)            , pop)
+                           else (N5 n (n >>> 1)        , keep)
+step (N5 n m) _               = (CountZs m             , push (CF n m))
+step (R' c) (CF n m)          = (R' (c + 1)            , pop)
 
 sim :: State -> [Context] -> Word32
 sim (R x) []   = x
 sim s     []   = let (s' ,f) = step s undefined in sim s' (f [])
 sim s cs@(c:_) = let (s' ,f) = step s c in sim s' (f cs)
 -}
+
+{-  -- *** Alternative translation into stack based step function
+data State = GCD Word32 Word32 | DropZs Word32 | CountZs Word32 | R Word32 | R' Int | N1 Word32 Word32 Word32 Word32 Word32 | N2 Word32 Word32 Word32 Word32 Word32 Word32 
+  | N3 Word32 Word32 Word32 Word32 Word32 Word32 Word32 | N4 Word32 Word32 Word32 Word32 Word32 Word32 Word32 Word32 Word32 | N5 Word32  Word32
+data Context = CA Word32 Word32 | CB Word32 Word32 Word32 | CC Word32 Word32 Word32 Word32 Word32 Word32 Word32 | CD Word32 Word32 Word32 Word32 Word32 Word32 Word32 Word32 Word32 | CE Word32 | CF Word32 Word32
+type ControlStack  = [Context]
+step :: State -> ControlStack -> (State, ControlStack)
+step (GCD x y)              cs                          = if y == 0
+                                                     then (R x                 , cs)
+                                                     else (DropZs x            , CA x y : cs)
+step (R a)                  (CA x y               : cs) = (DropZs y            , CB x y a : cs)
+step (R b)                  (CB x y a             : cs) = (N1 x y a b g        , cs) where g = max a b
+step (N1 x y a b g)         cs                          = (N2 x y a b g s      , cs) where s = min a b
+step (N2 x y a b g s)       cs                          = (N3 x y a b g        , cs) where d = g - s
+step (N3 x y a b g s d)     cs                          = (BinGCD s d          , CC x y a b g s d : cs)
+step (R r)                  (CC x y a b s g d     : cs) = (N4 x y a b s g d r o, cs) where o = x .|. y
+step (N4 x y a b s g d r o) cs                          = (CountZs o           , CD x y a b s g d r o : cs)
+step (R' e)                 (CD x y a b s g d r o : cs) = (R (r <<< e)         , cs)
+step (DropZs i)             cs                          = (CountZs i           , CE i : cs)
+step (R' s)                 (CE i                 : cs) = (R (i >>> s)         , cs)
+step (CountZs n)            cs                          = if odd n
+                                                     then (R' 0                , cs)
+                                                     else (N5 n m              , cs) where m = n >>> 1
+step (N5 n m)               cs                          = (CountZs m           , CF n m : cs)
+step (R' c)                 (CF n m               : cs) = (R' (c + 1)          , cs)
+
+sim :: State -> ControlStack -> Word32
+sim (R x) [] = x
+sim s     cs = let (s' ,cs') = step s c in sim s' cs'
+-}
+
 
 {- -- *** Introducing data stack to avoid copying around many values from state to context and back
 (#) :: [a] -> Int -> a
@@ -185,6 +213,36 @@ sim :: DataStack -> State -> [Context] -> Word32
 sim ds Ret   []   = top ds
 sim ds s     []   = let (g , s' ,f) = step ds s undefined in sim (g ds) s' (f [])
 sim ds s cs@(c:_) = let (g , s' ,f) = step ds s c         in sim (g ds) s' (f cs)
+-}
+
+{- -- *** Alternative introduction of data stack
+data State = GCD | DropZs | CntZs | Ret | N1 | N2 | N3 | N4 | N5 | N6 | N7 | N8 | N9
+data Context = CA | CB | CC | CD | CE | CF
+type ControlStack  = [Context]
+type DataStack = [Word32]
+step ::  State -> ControlStack -> DataStack -> (State, ControlStack, DataStack)
+step GCD    cs                (y:x:ds) = if y == 0
+                                    then (Ret   , cs   ,             x:ds)
+                                    else (DropZs, CA:cs,         x:y:x:ds)
+step Ret    (CA:cs)         (a:y:x:ds) = (DropZs, CB:cs,       y:a:y:x:ds)
+step Ret    (CB:cs)       (b:a:y:x:ds) = (N1    , cs   ,     g:b:a:y:x:ds) where g = max a b
+step N1     cs          (g:b:a:y:x:ds) = (N2    , cs   ,   s:g:b:a:y:x:ds) where s = min a b
+step N2     cs        (s:g:b:a:y:x:ds) = (N3    , cs   , d:s:g:b:a:y:x:ds) where d = g - s
+step N3     cs      (d:s:g:b:a:y:x:ds) = (BinGCD, CC:cs, d:s:g:b:a:y:x:ds)
+step Ret    (CC:cs)   (r:g:b:a:y:x:ds) = (N4    , cs   , o:r:g:b:a:y:x:ds) where o = x .|. y
+step N4     cs      (o:r:g:b:a:y:x:ds) = (CntZs , CD:cs, o:r:g:b:a:y:x:ds)
+step Ret    (CD:cs) (e:r:g:b:a:y:x:ds) = (Ret   , cs   ,             l:ds) where l = r <<< e
+step DropZs cs                  (i:ds) = (CntZs , CE:cs,           i:i:ds)
+step Ret    (CE:cs)           (s:i:ds) = (Ret   , cs   ,             r:ds) where r = i >>> s
+step CntZs  cs                  (n:ds) = if odd n
+                                    then (Ret   ,cs    ,             z:ds) where z = 0
+                                    else (N5    ,cs    ,           m:n:ds) where m = n >>> 1
+step N5     cs                (m:n:ds) = (CntZs, CF:cs ,           m:n:ds)
+step Ret    (CF:cs)           (c:n:ds) = (Ret  , cs    ,             p:ds) where p = c + 1
+
+sim :: DataStack -> State -> ControlStack -> Word32
+sim ds Ret [] = top ds
+sim ds s   cs = let (s', cs' ,ds') = step s cs ds in sim ds' s' cs'
 -}
 
 {- -- *** Merge Context stack and State into a control stack with labels
