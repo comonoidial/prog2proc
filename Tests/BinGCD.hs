@@ -144,37 +144,6 @@ sim s     []   = let (s' ,f) = step s undefined in sim s' (f [])
 sim s cs@(c:_) = let (s' ,f) = step s c in sim s' (f cs)
 -}
 
-{-  -- *** Alternative translation into stack based step function
-data State = GCD Word32 Word32 | DropZs Word32 | CountZs Word32 | R Word32 | R' Int | N1 Word32 Word32 Word32 Word32 Word32 | N2 Word32 Word32 Word32 Word32 Word32 Word32 
-  | N3 Word32 Word32 Word32 Word32 Word32 Word32 Word32 | N4 Word32 Word32 Word32 Word32 Word32 Word32 Word32 Word32 Word32 | N5 Word32  Word32
-data Context = CA Word32 Word32 | CB Word32 Word32 Word32 | CC Word32 Word32 Word32 Word32 Word32 Word32 Word32 | CD Word32 Word32 Word32 Word32 Word32 Word32 Word32 Word32 Word32 | CE Word32 | CF Word32 Word32
-type ControlStack  = [Context]
-step :: State -> ControlStack -> (State, ControlStack)
-step (GCD x y)              cs                          = if y == 0
-                                                     then (R x                 , cs)
-                                                     else (DropZs x            , CA x y : cs)
-step (R a)                  (CA x y               : cs) = (DropZs y            , CB x y a : cs)
-step (R b)                  (CB x y a             : cs) = (N1 x y a b g        , cs) where g = max a b
-step (N1 x y a b g)         cs                          = (N2 x y a b g s      , cs) where s = min a b
-step (N2 x y a b g s)       cs                          = (N3 x y a b g        , cs) where d = g - s
-step (N3 x y a b g s d)     cs                          = (BinGCD s d          , CC x y a b g s d : cs)
-step (R r)                  (CC x y a b s g d     : cs) = (N4 x y a b s g d r o, cs) where o = x .|. y
-step (N4 x y a b s g d r o) cs                          = (CountZs o           , CD x y a b s g d r o : cs)
-step (R' e)                 (CD x y a b s g d r o : cs) = (R (r <<< e)         , cs)
-step (DropZs i)             cs                          = (CountZs i           , CE i : cs)
-step (R' s)                 (CE i                 : cs) = (R (i >>> s)         , cs)
-step (CountZs n)            cs                          = if odd n
-                                                     then (R' 0                , cs)
-                                                     else (N5 n m              , cs) where m = n >>> 1
-step (N5 n m)               cs                          = (CountZs m           , CF n m : cs)
-step (R' c)                 (CF n m               : cs) = (R' (c + 1)          , cs)
-
-sim :: State -> ControlStack -> Word32
-sim (R x) [] = x
-sim s     cs = let (s' ,cs') = step s c in sim s' cs'
--}
-
-
 {- -- *** Introducing data stack to avoid copying around many values from state to context and back
 (#) :: [a] -> Int -> a
 (#) = (!!)
@@ -213,36 +182,6 @@ sim :: DataStack -> State -> [Context] -> Word32
 sim ds Ret   []   = top ds
 sim ds s     []   = let (g , s' ,f) = step ds s undefined in sim (g ds) s' (f [])
 sim ds s cs@(c:_) = let (g , s' ,f) = step ds s c         in sim (g ds) s' (f cs)
--}
-
-{- -- *** Alternative introduction of data stack
-data State = GCD | DropZs | CntZs | Ret | N1 | N2 | N3 | N4 | N5 | N6 | N7 | N8 | N9
-data Context = CA | CB | CC | CD | CE | CF
-type ControlStack  = [Context]
-type DataStack = [Word32]
-step ::  State -> ControlStack -> DataStack -> (State, ControlStack, DataStack)
-step GCD    cs                (y:x:ds) = if y == 0
-                                    then (Ret   , cs   ,             x:ds)
-                                    else (DropZs, CA:cs,         x:y:x:ds)
-step Ret    (CA:cs)         (a:y:x:ds) = (DropZs, CB:cs,       y:a:y:x:ds)
-step Ret    (CB:cs)       (b:a:y:x:ds) = (N1    , cs   ,     g:b:a:y:x:ds) where g = max a b
-step N1     cs          (g:b:a:y:x:ds) = (N2    , cs   ,   s:g:b:a:y:x:ds) where s = min a b
-step N2     cs        (s:g:b:a:y:x:ds) = (N3    , cs   , d:s:g:b:a:y:x:ds) where d = g - s
-step N3     cs      (d:s:g:b:a:y:x:ds) = (BinGCD, CC:cs, d:s:g:b:a:y:x:ds)
-step Ret    (CC:cs)   (r:g:b:a:y:x:ds) = (N4    , cs   , o:r:g:b:a:y:x:ds) where o = x .|. y
-step N4     cs      (o:r:g:b:a:y:x:ds) = (CntZs , CD:cs, o:r:g:b:a:y:x:ds)
-step Ret    (CD:cs) (e:r:g:b:a:y:x:ds) = (Ret   , cs   ,             l:ds) where l = r <<< e
-step DropZs cs                  (i:ds) = (CntZs , CE:cs,           i:i:ds)
-step Ret    (CE:cs)           (s:i:ds) = (Ret   , cs   ,             r:ds) where r = i >>> s
-step CntZs  cs                  (n:ds) = if odd n
-                                    then (Ret   ,cs    ,             z:ds) where z = 0
-                                    else (N5    ,cs    ,           m:n:ds) where m = n >>> 1
-step N5     cs                (m:n:ds) = (CntZs, CF:cs ,           m:n:ds)
-step Ret    (CF:cs)           (c:n:ds) = (Ret  , cs    ,             p:ds) where p = c + 1
-
-sim :: DataStack -> State -> ControlStack -> Word32
-sim ds Ret [] = top ds
-sim ds s   cs = let (s', cs' ,ds') = step s cs ds in sim ds' s' cs'
 -}
 
 {- -- *** Merge Context stack and State into a control stack with labels
