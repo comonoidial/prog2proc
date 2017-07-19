@@ -4,14 +4,13 @@ import Data.Bits
 import Data.Word
 import Debug.Trace
 
-data Label = I0 | I1 | GCD | T1 | E1 | CA | CB | N1 | N2 | N3 | N4 | CC | N5 | CD | N6 | DZs | CE | N7 | CZs | T2 | E2 | N8 | CF | N9 
-	deriving (Enum,Show)
+data Label = I0 | I1 | BinGCD | T1 | E1 | CA | CB | CC | CDE | CFG | CH | DropZs | CI | CntZs | T2 | E2 | CK deriving (Enum, Show)
 
 instance Default Label where
 	def = I0
 
-data Ctrl = NextPC | Return | Branch Label | Call Label
-data Oper = Cnst  | Plus | Sub | Or | Min | Max | ShR | ShL | IsEq | IsOdd deriving Show
+data Ctrl = Next | Return | Branch Label | Call Label
+data Oper = Const  | Plus | Sub | Or | Min | Max | ShR | ShL | IsEq | IsOdd deriving Show
 data Input = S Word8 | I Word32
 data StAction = SNop | Push | PushAfterPop Word8
 
@@ -24,7 +23,7 @@ agu stackSp (S i) = stackSp - i
 agu stackSp (I _) = stackSp
 
 ctrl :: Ctrl -> Word32 -> Label -> Word8 -> Label -> (Word8, Maybe (Word8, Label), Label)
-ctrl NextPC		_ pc rdAddr ctrlStack = (rdAddr  , Nothing					, succ pc	)
+ctrl Next		_ pc rdAddr ctrlStack = (rdAddr  , Nothing					, succ pc	)
 ctrl Return		_ pc rdAddr ctrlStack = (rdAddr-1, Nothing					, ctrlStack	)
 ctrl (Branch e)	0 pc rdAddr ctrlStack = (rdAddr  , Nothing					, e			)
 ctrl (Branch e)	c pc rdAddr ctrlStack = (rdAddr  , Nothing					, succ pc	)
@@ -60,34 +59,30 @@ system _ = bundle (pc, z, rdAddrC) where
 	a = selInput <$> ds0 <*> ia
 	b = selInput <$> ds1 <*> ib
 
-	(ia, ib, op, g, cmd) = unbundle $ microcode <$> pc
+	(cmd, ia, ib, op, g) = unbundle $ microcode <$> pc
 
 
-microcode :: Label -> (Input, Input, Oper, StAction, Ctrl)
-microcode I0  = (I 256, I 0, Cnst, Push			  , NextPC)
-microcode I1  = (I 32, I 0, Cnst , Push			  , NextPC)
-microcode GCD = (S 0 , I 0, IsEq , SNop			  , Branch E1)
-microcode T1  = (S 1 , I 0, Cnst , PushAfterPop 2 , Return)
-microcode E1  = (S 1 , I 0, Cnst , Push           , Call DZs)
-microcode CA  = (S 1 , I 0, Cnst , Push           , Call DZs)
-microcode CB  = (S 1 , S 0, Min  , Push           , NextPC)
-microcode N1  = (S 2 , S 1, Max  , Push           , NextPC)
-microcode N2  = (S 0 , S 1, Sub  , Push           , NextPC)
-microcode N3  = (S 2 , I 0, Cnst , Push           , NextPC)
-microcode N4  = (S 1 , I 0, Cnst , Push           , Call GCD)
-microcode CC  = (S 7 , S 6, Or   , Push           , NextPC)
-microcode N5  = (S 0 , I 0, Cnst , Push           , Call CZs)
-microcode CD  = (S 2 , S 0, ShL  , PushAfterPop 10, Return)
-microcode DZs = (S 0 , I 0, Cnst , Push           , Call CZs)
-microcode CE  = (S 1 , S 0, ShR  , PushAfterPop 2 , Return)
-microcode CZs = (S 0 , I 0, IsOdd, SNop           , Branch E2)
-microcode T2  = (I 0 , I 0, Cnst , PushAfterPop 1 , Return)
-microcode E2  = (S 0 , I 1, ShR  , Push           , NextPC)
-microcode N8  = (S 0 , I 0, Cnst , Push           , Call CZs)
-microcode CF  = (S 0 , I 1, Plus , PushAfterPop 3 , Return)
+microcode :: Label -> (Ctrl, Input, Input, Oper, StAction)
+microcode I0     = (Next      ,I 256, I 0, Const, Push)
+microcode I1     = (Next       ,I 32, I 0, Const, Push)
+microcode BinGCD = (Branch E1  , S 0, I 0, IsEq , Keep)
+microcode T1     = (Return     , S 1, I 0, Const, PushAfterPop 2)
+microcode E1     = (Call DropZs, S 1, I 0, Const, Push)
+microcode CA     = (Call DropZs, S 1, I 0, Const, Push)
+microcode CB     = (Next       , S 1, S 0, Max  , Push)
+microcode CC     = (Next       , S 2, S 1, Min  , Push)
+microcode CDE    = (Call BinGCD, S 1, S 0, Sub  , Push)
+microcode CFG    = (Call CntZs , S 5, S 4, Or   , Push)
+microcode CH     = (Return     , S 1, S 0, ShL  , PushAfterPop 7)
+microcode DropZs = (Call CntZs , S 0, I 0, Const, Push)
+microcode CI     = (Return     , S 1, S 0, ShR  , PushAfterPop 2)
+microcode CntZs  = (Branch E2  , S 0, I 0, IsOdd, Keep)
+microcode T2     = (Return     , I 0, I 0, Const, PushAfterPop 1)
+microcode E2     = (Call CntZs , S 0, I 1, ShR  , Push)
+microcode CK     = (Return     , S 0, I 1, Add  , PushAfterPop 2)
 
 alu :: Oper -> Word32 -> Word32 -> Word32
-alu Cnst  x _ = x
+alu Const x _ = x
 alu Plus  x y = x + y
 alu Sub   x y = x - y
 alu Or    x y = x .|. y
