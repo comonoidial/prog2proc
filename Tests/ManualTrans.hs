@@ -1,7 +1,5 @@
 module Tests.ManualTrans where
 
-import qualified Prelude as P (lookup)
-import Prelude hiding (lookup)
 import Data.Bits
 import Data.Word
 import Debug.Trace
@@ -200,7 +198,7 @@ sim ds Cont [] = head ds
 sim ds s    cs = let (s', cs' ,ds') = step s cs ds in sim ds' s' cs'
 -}
 
-{- -} -- *** Optimizing control
+{- -- *** Optimizing control
 data Label = BinGCD | T1 | E1 | CA | CB | CC | CDE | CFG | CH | DropZs | CI | CntZs | T2 | E2 | CK | Halt deriving Enum
 type ControlStack  = [Label]
 type DataStack = [Word32]
@@ -235,4 +233,127 @@ sim ds Halt [] = head ds
 sim ds pc   cs = sim ds' pc' cs' where
    (cf ,ds') = step pc ds
    (pc', cs') = cf pc cs
-{- -}
+-}
+
+{- -- *** Splitting into separate components
+data Label = BinGCD | T1 | E1 | CA | CB | CC | CDE | CFG | CH | DropZs | CI | CntZs | T2 | E2 | CK | Halt deriving (Enum, Show)
+type ControlStack  = [Label]
+type DataStack = [Word32]
+type ControlFun = Word32 -> Label -> ControlStack -> (Label, ControlStack)
+type Input = DataStack -> Word32
+type AluOp = Word32 -> Word32 -> Word32
+type StackMod = Word32 -> DataStack -> DataStack
+call f _ pc cs = (f, succ pc : cs)
+ret _ _ []     = (Halt, [])
+ret _ _ (c:cs) = (c, cs)
+next _ pc cs   = (succ pc, cs)
+jump f _ _ cs = (f, cs)
+branch e 1 pc cs = (succ pc, cs)
+branch e 0 pc cs = (e, cs)
+peek i ds = ds!!i
+isEq x y = if x == y then 1 else 0
+isOdd x _ = if odd x then 1 else 0
+keep _ ds = ds
+push x ds = x : ds
+pushAfterPop n x ds = x : drop n ds
+
+step ::  Label -> (ControlFun, Input, Input, AluOp, StackMod)
+step BinGCD = (branch E1  , peek 0 , const 0, isEq , keep)
+step T1     = (ret        , peek 1 , const 0, const, pushAfterPop 2)
+step E1     = (call DropZs, peek 1 , const 0, const, push)
+step CA     = (call DropZs, peek 1 , const 0, const, push)
+step CB     = (next       , peek 1 , peek 0 , max  , push)
+step CC     = (next       , peek 2 , peek 1 , min  , push)
+step CDE    = (call BinGCD, peek 1 , peek 0 , (-)  , push)
+step CFG    = (call CntZs , peek 5 , peek 4 , (.|.), push)
+step CH     = (ret        , peek 1 , peek 0 , (<<<), pushAfterPop 7)
+step DropZs = (call CntZs , peek 0 , const 0, const, push)
+step CI     = (ret        , peek 1 , peek 0 , (>>>), pushAfterPop 2)
+step CntZs  = (branch E2  , peek 0 , const 0, isOdd, keep)
+step T2     = (ret        , const 0, const 0, const, pushAfterPop 1)
+step E2     = (call CntZs , peek 0 , const 1, (>>>), push)
+step CK     = (ret        , peek 0 , const 1, (+)  , pushAfterPop 2)
+
+sim :: DataStack -> Label -> ControlStack -> Word32
+sim ds Halt [] = head ds
+sim ds pc   cs = {- trace (show pc ++ " " ++ show (x,y) ++ " " ++ show z ++ "   " ++ show cs' ++ "    " ++ show ds) $ -} sim ds' pc' cs' where
+   (cf, ia, ib, oper, sm) = step pc
+   x = ia ds
+   y = ib ds
+   z = oper x y
+   ds' = sm z ds
+   (pc', cs') = cf z pc cs
+-}
+
+{- -} -- *** introduce encoding for each component
+call f _ pc cs = (f, succ pc : cs)
+ret _ _ []     = (Halt, [])
+ret _ _ (c:cs) = (c, cs)
+next _ pc cs   = (succ pc, cs)
+jump f _ _ cs = (f, cs)
+branch e 1 pc cs = (succ pc, cs)
+branch e 0 pc cs = (e, cs)
+keep _ ds = ds
+push x ds = x : ds
+pushAfterPop n x ds = x : drop n ds
+
+data Input = S Int | I Word32
+selInput ds (S i) = ds !! i
+selInput _  (I x) = x
+
+data Label = BinGCD | T1 | E1 | CA | CB | CC | CDE | CFG | CH | DropZs | CI | CntZs | T2 | E2 | CK | Halt deriving (Enum, Show)
+type DataStack = [Word32]
+type CtrlStack = [Label]
+data AluOp = Const | Add | Sub | Or | Min | Max | ShR | ShL | IsEq | IsOdd deriving Show
+data StAction = Keep | Push | PushAfterPop Int
+data Ctrl = Next | Return | Branch Label | Call Label
+
+microcode ::  Label -> (Ctrl, Input, Input, AluOp, StAction)
+microcode BinGCD = (Branch E1  , S 0, I 0, IsEq , Keep)
+microcode T1     = (Return     , S 1, I 0, Const, PushAfterPop 2)
+microcode E1     = (Call DropZs, S 1, I 0, Const, Push)
+microcode CA     = (Call DropZs, S 1, I 0, Const, Push)
+microcode CB     = (Next       , S 1, S 0, Max  , Push)
+microcode CC     = (Next       , S 2, S 1, Min  , Push)
+microcode CDE    = (Call BinGCD, S 1, S 0, Sub  , Push)
+microcode CFG    = (Call CntZs , S 5, S 4, Or   , Push)
+microcode CH     = (Return     , S 1, S 0, ShL  , PushAfterPop 7)
+microcode DropZs = (Call CntZs , S 0, I 0, Const, Push)
+microcode CI     = (Return     , S 1, S 0, ShR  , PushAfterPop 2)
+microcode CntZs  = (Branch E2  , S 0, I 0, IsOdd, Keep)
+microcode T2     = (Return     , I 0, I 0, Const, PushAfterPop 1)
+microcode E2     = (Call CntZs , S 0, I 1, ShR  , Push)
+microcode CK     = (Return     , S 0, I 1, Add  , PushAfterPop 2)
+
+alu :: AluOp -> Word32 -> Word32 -> Word32
+alu Const x _ = x
+alu Add   x y = x + y
+alu Sub   x y = x - y
+alu Or    x y = x .|. y
+alu Min   x y = min x y
+alu Max   x y = max x y
+alu ShR   x y = x >>> y
+alu ShL   x y = x <<< y
+alu IsEq  x y = if x == y then 1 else 0
+alu IsOdd x _ = if odd x then 1 else 0
+
+stackMod :: StAction -> Word32 -> DataStack -> DataStack
+stackMod Keep             = keep
+stackMod Push             = push
+stackMod (PushAfterPop n) = pushAfterPop n
+
+ctrl :: Ctrl -> Word32 -> Label -> [Label] -> (Label, [Label])
+ctrl Next       = next
+ctrl Return     = ret
+ctrl (Branch e) = branch e
+ctrl (Call f  ) = call f
+
+sim :: DataStack -> Label -> [Label] -> Word32
+sim ds Halt _  = head ds
+sim ds pc   cs = {-trace (show pc ++ " " ++ show op ++ " " ++ show (x,y) ++ " " ++ show z ++ "   " ++ show cs' ++ "    " ++ show ds) $ -}sim ds' pc' cs' where
+  (f, ia, ib, op, g) = microcode pc
+  x = selInput ds ia
+  y = selInput ds ib
+  z = alu op x y 
+  ds' = stackMod g z ds
+  (pc',cs') = ctrl f z pc cs
