@@ -7,13 +7,13 @@ import Prog2Proc.SeqLogic
 
 icp :: SeqLogic s [Double] [[Double]] ()
 icp = do
-	px <- recieve
+	px <- receive
 	clock
-	py <- recieve
+	py <- receive
 	clock
-	qx <- recieve
+	qx <- receive
 	clock
-	qy <- recieve
+	qy <- receive
 	clock
 
 	nx <- alloc (replicate 180 undefined)
@@ -69,10 +69,10 @@ icp = do
 	clock
 	let b   = b' .+. b''
 	clock
-	(q',r) <- call $ qr [v0,v1,v2,v3] -- r is the 4x4 upper triangluar matrix, q is 180x4
+	([u0, u1, u2, u3],r) <- call $ qr [v0,v1,v2,v3] -- r is the 4x4 upper triangluar matrix, q is 180x4
+--	let [u0, u1, u2, u3] = q'
 	clock
 --	t <- call $ mat_mul q' b -- t is the 4x1 vector of the sytem rx = t
-	let [u0, u1, u2, u3] = q'
 	t0 <- call $ u0 `dotp` b
 	clock
 	t1 <- call $ u1 `dotp` b
@@ -83,30 +83,47 @@ icp = do
 	clock
 
 
-linSolver r t = x where
+linSolver r [t0,t1,t2,t3] = do
 	-- x3 = t3/r33
-	x3 = t3 / r33
+	let x3 = t3 / r33
+	clock
 
 	-- x2 = (t2-r23*x3)/r22	
-	r23x3	= r23 * x3
-	x2'		= t2 - r23x3
-	x2		= x2' / r22
+	let r23x3	= r23 * x3
+	clock
+	let cx2'		= t2 - r23x3
+	clock
+	let x2		= x2' / r22
+	clock
 
 	-- x1 = (t1 - r12x2 - r13x3) / r11
-	r12x2	= r12 * x2
-	r13x3	= r13 * x3
-	x1''	= t1 - r12x2
-	x1'		= x'' - r13x3
-	x1		= x' / r11
+	let r12x2 = r12 * x2
+	clock
+	let r13x3 = r13 * x3
+	clock
+	let x1'' = t1 - r12x2
+	clock
+	let x1' = x1'' - r13x3
+	clock
+	let cx1 = x1' / r11
+	clock
 
 	-- x0 = (t0 - r01x1 - r02x2 - r03x3) / r00
-	r01x1	= r01 * x1
-	r02x2	= r02 * x2
-	r03x3	= r03 * x3
-	x0'''	= t1    - r01x1
-	x0''	= x1''' - r02x2
-	x0'		= x''   - r03x3
-	x0		= x' / r00
+	let r01x1 = r01 * x1
+	clock
+	let r02x2 = r02 * x2
+	clock
+	let r03x3 = r03 * x3
+	clock
+	let x0''' = t1    - r01x1
+	clock
+	let x0'' = x0''' - r02x2
+	clock
+	let x0' = x0'   - r03x3
+	clock
+	let x0 = x0' / r00
+	clock
+	return [x0,x1,x2,x3]
 
 
 -- implementation of some kind of QR decomposition derived from Hendrik's masters project ICP code
@@ -153,7 +170,7 @@ qr [v0,v1,v2,v3] = do
    
    r <- call $ mat_mul q' a
    clock
-	return (q',r)
+   return (q',r)
 
 {-
    clock

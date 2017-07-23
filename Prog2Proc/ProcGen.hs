@@ -8,8 +8,8 @@ import Data.Maybe
 import Data.Either
 import Data.List
 
-test = do 
-   ParseOk pm <- parseFile ("." ++ pathSeparator : "Tests" ++ pathSeparator : "QR4.hs")
+test fn = do 
+   ParseOk pm <- parseFile ("." ++ pathSeparator : "Tests" ++ pathSeparator : fn ++ ".hs")
    let Module _ (Just (ModuleHead _ (ModuleName _ m) _ _)) ps is ds = fmap (const ()) pm
    let mh'= Just (ModuleHead () (ModuleName () (m++"_Proc")) Nothing Nothing)
    let ds' = map (fmap (withStoredVars . withUsedLocals . map withVarDefs)) $ lefts $ map getFunDec ds
@@ -25,10 +25,20 @@ test2 = do
    mapM_ (putStrLn . show) ds
 
 getFunDec (PatBind _ (PVar _ (Ident _ f)) (UnGuardedRhs _ (Do _ xs)) _) = Left (f, splitSeq (Args f []) xs)
-getFunDec (FunBind _ [Match _ (Ident _ f) vs (UnGuardedRhs _ (Do _ xs)) _]) = Left (f, splitSeq (Args f $ map getArg vs) xs)
+getFunDec (FunBind _ [Match _ (Ident _ f) vs (UnGuardedRhs _ (Do _ xs)) _]) = Left (f, splitSeq (Args f $ concatMap getBinders vs) xs)
 getFunDec d = Right d
 
-getArg (PVar _ (Ident _ x)) = x
+getBinder (PVar _ (Ident _ x)) = x
+getBinder x = error ("getBinder " ++ show x)
+
+getBinders (PVar _ (Ident _ x)) = [x]
+getBinders (PTuple _ Boxed xs) = concatMap getBinders xs
+getBinders (PList _ xs) = concatMap getBinders xs
+getBinders x = error ("getBinders " ++ show x)
+
+getRef (Var _ (UnQual _ (Ident _ r))) = MemRef r
+getRef (InfixApp _ (Var _ (UnQual _ (Ident _ r))) (QVarOp _ (UnQual _ (Symbol _ "?"))) i) = IxRef r i
+getRef x = error ("getRef " ++ show x)
 
 data Cycle a l = Cycle a Source [Action l] (Target l) deriving Show
 
@@ -46,7 +56,7 @@ data Target l
    | Return [Exp l]
    | Next
    | LoopEnter Integer   -- with counter start value
-   | LoopEnd Integer    -- with counter max value
+   | LoopEnd (Exp l)    -- with counter max value
    deriving Show
 
 data Action l
@@ -54,39 +64,45 @@ data Action l
    | Receive String
    | Emit (Exp l)
    | Alloc String (Exp l)
-   | Load String String
-   | Store String (Exp l)
+   | Load String (Ref l)
+   | Store (Ref l) (Exp l)
    | Start String String [Exp l]
    | Finish String String
    deriving Show
+
+data Ref l = MemRef String | IxRef String (Exp l) deriving Show
 
 splitSeq :: Show l => Source -> [Stmt l] -> [Cycle () l]
 splitSeq s = splitS [] where
    splitS xs [] = [Cycle () s (reverse xs) (Return [])]
    splitS xs (Qualifier _ (Var _ (UnQual _ (Ident _ "clock"))) : ys) = Cycle () s (reverse xs) Next : splitSeq Step ys
-   splitS xs (Qualifier _ (InfixApp _ (Var _ (UnQual _ (Ident _ r))) (QVarOp _ (UnQual _ (Symbol _ "<~"))) e) : ys) = splitS (Store r e : xs) ys
+   splitS xs (Qualifier _ (InfixApp _ r (QVarOp _ (UnQual _ (Symbol _ "<~"))) e) : ys) = splitS (Store (getRef r) e : xs) ys
    splitS xs (Qualifier q (InfixApp _ (App _ (App _ (Var v (UnQual u (Ident l "loop"))) (Lit _ (Int _ n _))) lm) (QVarOp _ (UnQual _ (Symbol _ "$"))) (Lambda _ [PVar _ (Ident _ i)] (Do _ bs))) : ys)
       = Cycle () s (reverse xs) (LoopEnter n) : splitSeq (LoopBegin i) (bs ++ loopEnd) ++ splitSeq LoopExit ys
          where loopEnd = [Qualifier q (App v (Var v (UnQual u (Ident l "LoopEnd"))) lm)]
    splitS xs (Generator _ r (InfixApp _ (Var _ (UnQual _ (Ident _ "call"))) (QVarOp _ (UnQual _ (Symbol _ "$"))) c) : ys)
-      | (Var _ (UnQual _ (Ident _ f)) : as) <- flattenApps c = Cycle () s (reverse xs) (Call f as) : splitSeq (Results [getArg r]) ys
-   splitS xs (Generator _ r (Var _ (UnQual _ (Ident _ "receive"))) : ys) = splitS (Receive (getArg r) : xs) ys
-   splitS xs (Generator _ r (App _ (Var _ (UnQual _ (Ident _ "alloc"))) i) : ys) = splitS (Alloc (getArg r) i : xs) ys
-   splitS xs (Generator _ x (App _ (Var _ (UnQual _ (Ident _ "use"))) (Var _ (UnQual _ (Ident _ r)))) : ys) = splitS (Load (getArg x) r : xs) ys
-   splitS xs (Generator _ x (App _ (Var _ (UnQual _ (Ident _ "finish"))) (Var _ (UnQual _ (Ident _ r)))) : ys) = splitS (Finish (getArg x) r : xs) ys
+      | (Var _ (UnQual _ (Ident _ f)) : as) <- flattenApps c = Cycle () s (reverse xs) (Call f $ concatMap flattenArg as) : splitSeq (Results (getBinders r)) ys
+   splitS xs (Generator _ r (Var _ (UnQual _ (Ident _ "receive"))) : ys) = splitS (Receive (getBinder r) : xs) ys
+   splitS xs (Generator _ r (App _ (Var _ (UnQual _ (Ident _ "alloc"))) i) : ys) = splitS (Alloc (getBinder r) i : xs) ys
+   splitS xs (Generator _ x (App _ (Var _ (UnQual _ (Ident _ "use"))) r) : ys) = splitS (Load (getBinder x) (getRef r) : xs) ys
+   splitS xs (Generator _ x (App _ (Var _ (UnQual _ (Ident _ "finish"))) (Var _ (UnQual _ (Ident _ r)))) : ys) = splitS (Finish (getBinder x) r : xs) ys
    splitS xs (Generator _ x (InfixApp _ (Var _ (UnQual _ (Ident _ "start"))) (QVarOp _ (UnQual _ (Symbol _ "$"))) s) : ys) 
-      | (Var _ (UnQual _ (Ident _ c)) : as) <- flattenApps s = splitS (Start (getArg x) c as : xs) ys
-   splitS xs (LetStmt _ (BDecls _ [PatBind _ r (UnGuardedRhs _ e) _]) : ys) = splitS (Logic (getArg r) e : xs) ys
+      | (Var _ (UnQual _ (Ident _ c)) : as) <- flattenApps s = splitS (Start (getBinder x) c (concatMap flattenArg as) : xs) ys
+   splitS xs (LetStmt _ (BDecls _ [PatBind _ r (UnGuardedRhs _ e) _]) : ys) = splitS (Logic (getBinder r) e : xs) ys
    splitS xs (Qualifier _ (App _ (Var _ (UnQual _ (Ident _ "emit"))) e) : ys) = splitS (Emit e : xs) ys
-   splitS xs [Qualifier _ (App _ (Var _ (UnQual _ (Ident _ "return"))) e)] = [Cycle () s (reverse xs) (Return [e])]
-   splitS xs [Qualifier _ (App _ (Var _ (UnQual _ (Ident _ "LoopEnd"))) (Lit _ (Int _ m _)))] = [Cycle () s (reverse xs) (LoopEnd m)]
+   splitS xs [Qualifier _ (App _ (Var _ (UnQual _ (Ident _ "return"))) e)] = [Cycle () s (reverse xs) (Return $ flattenArg e)]
+   splitS xs [Qualifier _ (App _ (Var _ (UnQual _ (Ident _ "LoopEnd"))) m)] = [Cycle () s (reverse xs) (LoopEnd m)]
    splitS xs [Qualifier _ (InfixApp _ (Var _ (UnQual _ (Ident _ "call"))) (QVarOp _ (UnQual _ (Symbol _ "$"))) c)] 
-      | (Var _ (UnQual _ (Ident _ f)) : as) <- flattenApps c = [Cycle () s (reverse xs) (Jump f as)]
+      | (Var _ (UnQual _ (Ident _ f)) : as) <- flattenApps c = [Cycle () s (reverse xs) (Jump f $ concatMap flattenArg as)]
    splitS xs (y : ys) = error (show y) -- splitS xs ys
 
 flattenApps (App _ f x) = flattenApps f ++ [x]
 flattenApps (InfixApp _ x (QVarOp l f) y) = [Var l f, x, y]
 flattenApps e           = [e]
+
+flattenArg (List _ xs) = xs
+flattenArg (Tuple _ Boxed xs) = concatMap flattenArg xs
+flattenArg x = [x]
 
 type VarDefs = [String]
 
@@ -143,7 +159,7 @@ aluBody c xs [] = Nothing
 aluBody c xs es = Just $ Match () (Ident () "alu") (PApp () (UnQual () (Ident () c)) [] : map (\x -> (PVar () (Ident () x))) xs) (UnGuardedRhs () (Tuple () Boxed $ map (Var () . UnQual () . Ident () . fst) es)) $
    Just (BDecls () $ map (\(x,e) -> PatBind () (PVar () (Ident () x)) (UnGuardedRhs () $ fmap (const ()) e) Nothing) es)
 
-genCode :: Show l => [Cycle (StoredDefs, UsedLocals) l] -> [Decl ()]
+genCode :: [Cycle (StoredDefs, UsedLocals) ()] -> [Decl ()]
 genCode cs = [ctrlData, genDataCon "Label" (map (\(c,_,_)->c) ds), control, componentCode "microCode" mc, genDataCon "AluOp" ("AluNop" : map cName acs'), componentCode "alu" acs'] where
    acs = zipWith genAluClause [0..] cs
    acs' = catMaybes acs
@@ -151,10 +167,10 @@ genCode cs = [ctrlData, genDataCon "Label" (map (\(c,_,_)->c) ds), control, comp
    mls = genMemOps ([],[]) cs
    mc = zipWith3 (\(c,xs,e) ac ls -> Clause c (map Just xs) (Tuple () Boxed ([e, ac] ++ ls)) Nothing) ds (map (maybe (Con () (UnQual () (Ident () "AluNop"))) clauseCon) acs) mls
 
-genControl :: Int -> [String] -> [Cycle a l] -> [(String, [String] , Exp ())]
+genControl :: Int -> [String] -> [Cycle a ()] -> [(String, [String] , Exp ())]
 genControl n ls [] = []
 genControl n (l:ls) (Cycle _ s _ (LoopEnd m) : xs) = (labelName n s, [], ce) : genControl (n+1) ls xs where
-   ce = App () (App () (Con () (UnQual () (Ident () "LoopBack"))) (Lit () (Int () m (show m)))) (Con () (UnQual () (Ident () l))) 
+   ce = App () (App () (Con () (UnQual () (Ident () "LoopBack"))) m) (Con () (UnQual () (Ident () l))) 
 genControl n ls (Cycle _ s _ t : xs) = (labelName n s, [], controlExp t) : genControl (n+1) ls' xs where 
    ls' = case t of {LoopEnter _ -> ("L_" ++ show (n+1)) : ls; _ -> ls}
 
