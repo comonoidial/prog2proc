@@ -60,14 +60,14 @@ data Target l
    deriving Show
 
 data Action l
-   = Logic String (Exp l)
+   = Logic [String] (Exp l)
    | Receive String
    | Emit (Exp l)
    | Alloc String (Exp l)
    | Load String (Ref l)
    | Store (Ref l) (Exp l)
    | Start String String [Exp l]
-   | Finish String String
+   | Finish [String] String
    deriving Show
 
 data Ref l = MemRef String | IxRef String (Exp l) deriving Show
@@ -85,10 +85,10 @@ splitSeq s = splitS [] where
    splitS xs (Generator _ r (Var _ (UnQual _ (Ident _ "receive"))) : ys) = splitS (Receive (getBinder r) : xs) ys
    splitS xs (Generator _ r (App _ (Var _ (UnQual _ (Ident _ "alloc"))) i) : ys) = splitS (Alloc (getBinder r) i : xs) ys
    splitS xs (Generator _ x (App _ (Var _ (UnQual _ (Ident _ "use"))) r) : ys) = splitS (Load (getBinder x) (getRef r) : xs) ys
-   splitS xs (Generator _ x (App _ (Var _ (UnQual _ (Ident _ "finish"))) (Var _ (UnQual _ (Ident _ r)))) : ys) = splitS (Finish (getBinder x) r : xs) ys
+   splitS xs (Generator _ x (App _ (Var _ (UnQual _ (Ident _ "finish"))) (Var _ (UnQual _ (Ident _ r)))) : ys) = splitS (Finish (getBinders x) r : xs) ys
    splitS xs (Generator _ x (InfixApp _ (Var _ (UnQual _ (Ident _ "start"))) (QVarOp _ (UnQual _ (Symbol _ "$"))) s) : ys) 
       | (Var _ (UnQual _ (Ident _ c)) : as) <- flattenApps s = splitS (Start (getBinder x) c (concatMap flattenArg as) : xs) ys
-   splitS xs (LetStmt _ (BDecls _ [PatBind _ r (UnGuardedRhs _ e) _]) : ys) = splitS (Logic (getBinder r) e : xs) ys
+   splitS xs (LetStmt _ (BDecls _ [PatBind _ r (UnGuardedRhs _ e) _]) : ys) = splitS (Logic (getBinders r) e : xs) ys
    splitS xs (Qualifier _ (App _ (Var _ (UnQual _ (Ident _ "emit"))) e) : ys) = splitS (Emit e : xs) ys
    splitS xs [Qualifier _ (App _ (Var _ (UnQual _ (Ident _ "return"))) e)] = [Cycle () s (reverse xs) (Return $ flattenArg e)]
    splitS xs [Qualifier _ (App _ (Var _ (UnQual _ (Ident _ "LoopEnd"))) m)] = [Cycle () s (reverse xs) (LoopEnd m)]
@@ -108,11 +108,11 @@ type VarDefs = [String]
 
 withVarDefs :: Cycle a l -> Cycle VarDefs l
 withVarDefs (Cycle _ s xs t) = Cycle (concatMap vdefs xs) s xs t where
-   vdefs (Logic x _)  = [x]
-   vdefs (Receive x)  = [x]
-   vdefs (Load x _ )  = [x]
-   vdefs (Finish x _) = [x]
-   vdefs _            = []
+   vdefs (Logic xs _)  = xs
+   vdefs (Receive x)   = [x]
+   vdefs (Load x _ )   = [x]
+   vdefs (Finish xs _) = xs
+   vdefs _             = []
 
 sourceVarDefs :: Source -> [String]
 sourceVarDefs (Args _   xs) = xs
@@ -144,20 +144,18 @@ componentCode f = FunBind () . map (\(Clause c xs e mw) ->  Match () (Ident () f
    pArg = maybe (PWildCard ()) (PVar () . Ident ())
 
 genAluClause :: Show l => Int -> Cycle (a, UsedLocals) l -> Maybe Clause
-genAluClause n (Cycle (_, us) _ xs _) = case [(x, e) | Logic x e <- xs] of
+genAluClause n (Cycle (_, us) _ as _) = case [(xs, e) | Logic xs e <- as] of
    [] -> Nothing
-   as -> Just (Clause ("Op_" ++ show n) (groupArgs $ filter (`elem` us) $ concatMap (usedVarsE . snd) as) (Tuple () Boxed $ map (Var () . UnQual () . Ident ()) $ groupRes $ map fst as) $
-      Just (BDecls () $ map (\(x,e) -> PatBind () (PVar () (Ident () x)) (UnGuardedRhs () $ fmap (const ()) e) Nothing) as))
+   es -> Just (Clause ("Op_" ++ show n) (groupArgs $ filter (`elem` us) $ concatMap (usedVarsE . snd) es) (Tuple () Boxed $ map (Var () . UnQual () . Ident ()) $ groupRes $ concatMap fst es) $
+      Just (BDecls () $ map (\(xs,e) -> PatBind () (genBinders xs) (UnGuardedRhs () $ fmap (const ()) e) Nothing) es))
+
+genBinders [x] = (PVar () (Ident () x))
+genBinders xs  = PTuple () Boxed (map (PVar () . Ident ()) xs)
 
 groupArgs :: [String] -> [Maybe String]
 groupArgs xs = take 2 (map Just (filter ((< 'p') . head) xs) ++ repeat Nothing) ++ take 2 (map Just (filter ((>= 'p') . head) xs) ++ repeat Nothing)
 
 groupRes xs = take 1 ((filter ((< 'p') . head) xs) ++ repeat "undefined") ++ take 1 ((filter ((>= 'p') . head) xs) ++ repeat "undefined")
-
-aluBody :: String -> [String] -> [(String, Exp l)] -> Maybe (Match ())
-aluBody c xs [] = Nothing
-aluBody c xs es = Just $ Match () (Ident () "alu") (PApp () (UnQual () (Ident () c)) [] : map (\x -> (PVar () (Ident () x))) xs) (UnGuardedRhs () (Tuple () Boxed $ map (Var () . UnQual () . Ident () . fst) es)) $
-   Just (BDecls () $ map (\(x,e) -> PatBind () (PVar () (Ident () x)) (UnGuardedRhs () $ fmap (const ()) e) Nothing) es)
 
 genCode :: [Cycle (StoredDefs, UsedLocals) ()] -> [Decl ()]
 genCode cs = [ctrlData, genDataCon "Label" (map (\(c,_,_)->c) ds), control, componentCode "microCode" mc, genDataCon "AluOp" ("AluNop" : map cName acs'), componentCode "alu" acs'] where

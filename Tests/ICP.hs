@@ -28,7 +28,7 @@ icp = do
 		let pointX = vecPx!!i
 		clock
 		let vecPointX = replicate 180 pointX
-		let vecDx = vecPointX .-. vecPx
+		let vecDx = vecPointX .-. vecQx
 		clock
 		let vecDx2 = vecDx .*. vecDx
 		clock
@@ -107,9 +107,8 @@ icp = do
 --	emit [x0,x1,x2,x3]
 
 
-linSolver [[r00,r01,r02,r03],[_,r11,r12,r13],[_,_,r22,r23],[_,_,_,r33]] [t0,t1,t2,t3] = do
+linSolver [[r00,r01,r02,r03],[_r10,r11,r12,r13],[_r20,_r21,r22,r23],[_r30,_r31,_r32,r33]] [t0,t1,t2,t3] = do
 	-- x3 = t3/r33
---	[[r00,r01,r02,r03],[_,r11,r12,r13],[_,_,r22,r23],[_,_,_,r33]]
 	let x3 = t3 / r33
 	clock
 
@@ -140,7 +139,7 @@ linSolver [[r00,r01,r02,r03],[_,r11,r12,r13],[_,_,r22,r23],[_,_,_,r33]] [t0,t1,t
 	clock
 	let r03x3 = r03 * x3
 	clock
-	let x0''' = t1    - r01x1
+	let x0''' = t1 - r01x1
 	clock
 	let x0'' = x0''' - r02x2
 	clock
