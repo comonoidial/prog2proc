@@ -10,7 +10,7 @@ instance Default Label where
 	def = I0
 
 data Ctrl = Next | Return | Branch Label | Call Label
-data Oper = Cnst   | Plus | Sub | Or | Min | Max | ShR | ShL | IsEq | IsOdd deriving Show
+data Oper = Pass | Plus | Sub | Or | Min | Max | ShR | ShL | IsEq | IsOdd deriving Show
 data Input = S Word8 | I Word32
 data StAction = Keep | Push | PopNPush Word8
 
@@ -59,26 +59,26 @@ proccesor _ = bundle (pc, z) where
   (dSP', wrData) = liftB3 stackMod stOp dSP z
 
 microcode :: Label -> (Ctrl, Input, Input, Oper, StAction)
-microcode I0     = (Next      ,I 256, I 0, Cnst , Push)
-microcode I1     = (Next       ,I 32, I 0, Cnst , Push)
+microcode I0     = (Next      ,I 256, I 0, Pass , Push)
+microcode I1     = (Next       ,I 32, I 0, Pass , Push)
 microcode BinGCD = (Branch E1  , S 0, I 0, IsEq , Keep)
-microcode T1     = (Return     , S 1, I 0, Cnst , PopNPush 2)
-microcode E1     = (Call DropZs, S 1, I 0, Cnst , Push)
-microcode CA     = (Call DropZs, S 1, I 0, Cnst , Push)
+microcode T1     = (Return     , S 1, I 0, Pass , PopNPush 2)
+microcode E1     = (Call DropZs, S 1, I 0, Pass , Push)
+microcode CA     = (Call DropZs, S 1, I 0, Pass , Push)
 microcode CB     = (Next       , S 1, S 0, Max  , Push)
 microcode CC     = (Next       , S 2, S 1, Min  , Push)
 microcode CDE    = (Call BinGCD, S 1, S 0, Sub  , Push)
 microcode CFG    = (Call CntZs , S 5, S 4, Or   , Push)
 microcode CH     = (Return     , S 1, S 0, ShL  , PopNPush 7)
-microcode DropZs = (Call CntZs , S 0, I 0, Cnst , Push)
+microcode DropZs = (Call CntZs , S 0, I 0, Pass , Push)
 microcode CI     = (Return     , S 1, S 0, ShR  , PopNPush 2)
 microcode CntZs  = (Branch E2  , S 0, I 0, IsOdd, Keep)
-microcode T2     = (Return     , I 0, I 0, Cnst , PopNPush 1)
+microcode T2     = (Return     , I 0, I 0, Pass , PopNPush 1)
 microcode E2     = (Call CntZs , S 0, I 1, ShR  , Push)
 microcode CK     = (Return     , S 0, I 1, Plus  , PopNPush 2)
 
 alu :: Oper -> Word32 -> Word32 -> Word32
-alu Cnst  x _ = x
+alu Pass  x _ = x
 alu Plus  x y = x + y
 alu Sub   x y = x - y
 alu Or    x y = x .|. y

@@ -57,6 +57,7 @@ FPGAs became large enough for many applications.
  \item How to make processor design a more systematic process?
 \end{itemize}
 
+Functional languages have a long history with hardware design \cite{Sheeran2005}
 
 \subsection{Hardware in Haskell using \clash}
 \clash \cite{Baaij} is a subset of Haskell that can be compiled to widely supported lower level hardware description languages such as Verilog and VHDL.
@@ -99,10 +100,10 @@ countZeros :: Word32 -> Word32
 countZeros n = if odd n then 0 
   else countZeros (n >>> 1) + 1
 \end{lstlisting}
-
+the count trailing zeros could been implemented as a primitive operation as a fold over bits
 
 \subsection{Desugaring and flattening the program}
-first step is splitting up expressions which are too complex to execute within a single clock cycle \\
+the first step is splitting up expressions which are too complex to execute within a single clock cycle \\
 this can be done by introducing let expression like in the conversion to administrative normal form \cite{ANF} \\
 the question is which expressions to define as trivial, for example some arithmetic operations mights be cheap enough to keep nested \\
 
@@ -273,9 +274,9 @@ type StackMod = Word32 -> DataStack -> DataStack
 \begin{lstlisting}
 step :: Label -> (CtrlFun,Input,Input,AluOp,StackMod)
 step GCD = (branch E1  ,peek 0,lit 0 , isEq ,keep)
-step T1  = (ret        ,peek 1,lit 0 , const,popNPush 2)
-step E1  = (call DropZs,peek 1,lit 0 , const,push)
-step CA  = (call DropZs,peek 1,lit 0 , const,push)
+step T1  = (ret        ,peek 1,lit 0 , pass ,popNPush 2)
+step E1  = (call DropZs,peek 1,lit 0 , pass ,push)
+step CA  = (call DropZs,peek 1,lit 0 , pass ,push)
 step CB  = (next       ,peek 1,peek 0, max  ,push)
 step CC  = (next       ,peek 2,peek 1, min  ,push)
 \end{lstlisting}
@@ -300,18 +301,18 @@ data Ctrl = Call Label |Return |Branch Label |Next
 microcode :: Label -> (Ctrl,Input,Input,AluOp,StAction)
 microcode pc = case pc of
   BinGCD -> (Branch E1  , S 0, I 0, IsEq , Keep)
-  T1     -> (Return     , S 1, I 0, Const, PopNPush 2)
-  E1     -> (Call DropZs, S 1, I 0, Const, Push)
-  CA     -> (Call DropZs, S 1, I 0, Const, Push)
+  T1     -> (Return     , S 1, I 0, Pass , PopNPush 2)
+  E1     -> (Call DropZs, S 1, I 0, Pass , Push)
+  CA     -> (Call DropZs, S 1, I 0, Pass , Push)
   CB     -> (Next       , S 1, S 0, Max  , Push)
   CC     -> (Next       , S 2, S 1, Min  , Push)
   CDE    -> (Call BinGCD, S 1, S 0, Sub  , Push)
   CFG    -> (Call CntZs , S 5, S 4, Or   , Push)
   CH     -> (Return     , S 1, S 0, ShL  , PopNPush 7)
-  DropZs -> (Call CntZs , S 0, I 0, Const, Push)
+  DropZs -> (Call CntZs , S 0, I 0, Pass , Push)
   CI     -> (Return     , S 1, S 0, ShR  , PopNPush 2)
   CntZs  -> (Branch E2  , S 0, I 0, IsOdd, Keep)
-  T2     -> (Return     , I 0, I 0, Const, PopNPush 1)
+  T2     -> (Return     , I 0, I 0, Pass , PopNPush 1)
   E2     -> (Call CntZs , S 0, I 1, ShR  , Push)
   CK     -> (Return     , S 0, I 1, Add  , PopNPush 2)
 \end{lstlisting}
@@ -319,7 +320,7 @@ microcode pc = case pc of
 
 \begin{lstlisting}
 alu :: AluOp -> Word32 -> Word32 -> Word32
-alu Const x _ = x
+alu Pass  x _ = x
 alu Add   x y = x + y
 alu Sub   x y = x - y
 alu Or    x y = x .|. y
@@ -449,7 +450,7 @@ stackMod (PopNPush n) dSP z =
 \caption{Architecture of derived processor}
 \end{figure}
 
-\subsection{Instruction set and memory}
+\subsection{Differences with common processors}
 
 The downside of using horizontal microcode is that it costs a lot of bits to encode each step in the program \\
 also writing microcode by hand is a lot of work \\
@@ -479,8 +480,8 @@ sim ds (pc:cs) = sim ds' cs' where
 
 \end{lstlisting}
 
-\subsection{The process of generating application specific processors}
-
+heap memory \\
+input/ouput 
 
 \section{A DSL for explicitly clocked programs}
 When designing application specific hardware components we care a lot about performance and/or efficiency, otherwise we could have used some existing processor.
@@ -501,6 +502,11 @@ the coprocessor executes concurrently after forking it from main program, and yo
 
 \subsection{Vectorisation support}
 One of the most important ways to achieve higher performance in specialized hardware is to do a lot things in parallel.
+However the amount of available parallism is often larger than what fits on the limited area of the hardware.
+Thus we have split operations on large vectors into segments which are executed over time. \\
+
+\textit{Work in progress, to be extended}
+
 
 \subsection{Software pipelining}
 Dependencies between operations can lead to poor utilisation of the available hardware resources.\\
@@ -515,7 +521,11 @@ this allows whole system simulation and analysis in early stages of the design p
 interpretSeqLogic :: (forall s. SeqLogic s i o ())
   -> Signal (Maybe i) -> Signal (Maybe o)
 \end{lstlisting}
-this cycle by cycle simulation is implemented using the operational monad technique, where $clock$ statements suspend the computation
+this cycle by cycle simulation is implemented using the operational monad technique, where $clock$ statements suspend the computation \\
+memory is implemented using the lazy ST monad \\
+for coprocessors a list of active ones is maintained and each one is run at every $clock$ statement in the main program
+
+
 
 \section{Example application: ICP}
 iterative closest point is an algorithm used for position finding using a laser range finder \cite{Robin:Hendrik}
@@ -670,6 +680,8 @@ direct control vs. instruction memory \\
 extra delay (register) before or after the alu to increase clock frequency
 
 \section{Related approaches}
+
+% \cite{Dan R. Ghica, Alex Smith, Satnam Singh: Geometry of Synthesis IV: compiling affine recursion into static hardware. ICFP 2011: 221-233}
 
 \subsection{High level synthesis}
 Generates hardware from software written in ordinary programming languages (commonly C(++) or Matlab)\\

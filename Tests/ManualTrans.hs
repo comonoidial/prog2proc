@@ -251,6 +251,7 @@ jump f _ _ cs = (f, cs)
 branch e 1 pc cs = (succ pc, cs)
 branch e 0 pc cs = (e, cs)
 peek i ds = ds!!i
+pass = const
 isEq x y = if x == y then 1 else 0
 isOdd x _ = if odd x then 1 else 0
 keep _ ds = ds
@@ -260,18 +261,18 @@ lit = const
 
 step ::  Label -> (ControlFun, Input, Input, AluOp, StackMod)
 step BinGCD = (branch E1  , peek 0, lit 0 , isEq , keep)
-step T1     = (ret        , peek 1, lit 0 , const, popNPush 2)
-step E1     = (call DropZs, peek 1, lit 0 , const, push)
-step CA     = (call DropZs, peek 1, lit 0 , const, push)
+step T1     = (ret        , peek 1, lit 0 , pass , popNPush 2)
+step E1     = (call DropZs, peek 1, lit 0 , pass , push)
+step CA     = (call DropZs, peek 1, lit 0 , pass , push)
 step CB     = (next       , peek 1, peek 0, max  , push)
 step CC     = (next       , peek 2, peek 1, min  , push)
 step CDE    = (call BinGCD, peek 1, peek 0, (-)  , push)
 step CFG    = (call CntZs , peek 5, peek 4, (.|.), push)
 step CH     = (ret        , peek 1, peek 0, (<<<), popNPush 7)
-step DropZs = (call CntZs , peek 0, lit 0 , const, push)
+step DropZs = (call CntZs , peek 0, lit 0 , pass , push)
 step CI     = (ret        , peek 1, peek 0, (>>>), popNPush 2)
 step CntZs  = (branch E2  , peek 0, lit 0 , isOdd, keep)
-step T2     = (ret        , lit 0 , lit 0 , const, popNPush 1)
+step T2     = (ret        , lit 0 , lit 0 , pass , popNPush 1)
 step E2     = (call CntZs , peek 0, lit 1 , (>>>), push)
 step CK     = (ret        , peek 0, lit 1 , (+)  , popNPush 2)
 
@@ -291,29 +292,29 @@ data Label = BinGCD | T1 | E1 | CA | CB | CC | CDE | CFG | CH | DropZs | CI | Cn
 type DataStack = [Word32]
 type CtrlStack = [Label]
 data Input = S Int | I Word32
-data AluOp = Const | Add | Sub | Or | Min | Max | ShR | ShL | IsEq | IsOdd deriving Show
+data AluOp = Pass | Add | Sub | Or | Min | Max | ShR | ShL | IsEq | IsOdd deriving Show
 data StAction = Keep | Push | PopNPush Int
 data Ctrl = Next | Return | Branch Label | Call Label
 
 microcode ::  Label -> (Ctrl, Input, Input, AluOp, StAction)
 microcode BinGCD = (Branch E1  , S 0, I 0, IsEq , Keep)
-microcode T1     = (Return     , S 1, I 0, Const, PopNPush 2)
-microcode E1     = (Call DropZs, S 1, I 0, Const, Push)
-microcode CA     = (Call DropZs, S 1, I 0, Const, Push)
+microcode T1     = (Return     , S 1, I 0, Pass, PopNPush 2)
+microcode E1     = (Call DropZs, S 1, I 0, Pass, Push)
+microcode CA     = (Call DropZs, S 1, I 0, Pass, Push)
 microcode CB     = (Next       , S 1, S 0, Max  , Push)
 microcode CC     = (Next       , S 2, S 1, Min  , Push)
 microcode CDE    = (Call BinGCD, S 1, S 0, Sub  , Push)
 microcode CFG    = (Call CntZs , S 5, S 4, Or   , Push)
 microcode CH     = (Return     , S 1, S 0, ShL  , PopNPush 7)
-microcode DropZs = (Call CntZs , S 0, I 0, Const, Push)
+microcode DropZs = (Call CntZs , S 0, I 0, Pass, Push)
 microcode CI     = (Return     , S 1, S 0, ShR  , PopNPush 2)
 microcode CntZs  = (Branch E2  , S 0, I 0, IsOdd, Keep)
-microcode T2     = (Return     , I 0, I 0, Const, PopNPush 1)
+microcode T2     = (Return     , I 0, I 0, Pass, PopNPush 1)
 microcode E2     = (Call CntZs , S 0, I 1, ShR  , Push)
 microcode CK     = (Return     , S 0, I 1, Add  , PopNPush 2)
 
 alu :: AluOp -> Word32 -> Word32 -> Word32
-alu Const x _ = x
+alu Pass  x _ = x
 alu Add   x y = x + y
 alu Sub   x y = x - y
 alu Or    x y = x .|. y
