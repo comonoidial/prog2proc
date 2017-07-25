@@ -41,7 +41,9 @@ From programs written in an embedded Haskell DSL with explicit clock cycle bound
 
 
 \section{Introduction}
-
+after getting performance gains first from higher clock frequencies and later from increased parallelism \\
+with the energy cost (either in electricy bill for data center, or battery live for mobile devices) as the main bottleneck in computing \\
+raising clock frequencies is no longer an option and exploiting more parallelism is getting harder with diminishing returns \\
 Specialisation as key to hardware effiency. \\
 FPGAs became large enough for many applications.
 %FPGAs even available as accelerators for cloud computing.
@@ -106,9 +108,24 @@ the count trailing zeros could been implemented as a primitive operation as a fo
 the first step is splitting up expressions which are too complex to execute within a single clock cycle \\
 this can be done by introducing let expression like in the conversion to administrative normal form \cite{ANF} \\
 the question is which expressions to define as trivial, for example some arithmetic operations mights be cheap enough to keep nested \\
-
+\begin{lstlisting}
+binGCD x y = 
+  if (y == 0) then x
+  else
+    let a = dropZeros x in
+    let b = dropZeros y in
+    let g = max a b in
+    let s = min a b in
+    let d = g - s in
+    let r = binGCD s d in
+    let o = x .|. y in
+    let e = countZeros o in
+    r <<< e
+\end{lstlisting}
 
 \subsection{Making sequential execution explicit}
+making control flow explicit using continuation passing style is a standard method in compilers for functional languages
+with a flattened program we only have to introduce a continuation for the body of each let expression:
 \begin{lstlisting}
 binGCD x y k = if (y == 0)
   then cont x k
@@ -124,7 +141,9 @@ binGCD x y k = if (y == 0)
                     (\e -> cont (r <<< e) k)
       )))))))
 \end{lstlisting}
+here we use the $cont$ function to make continuation application explicit
 
+\subsection{Defunctionalising continuations}
 translating recursive functions \cite{Ingmar} \cite{Zhai} \\
 CPS transform \cite{AppelCwC} \\
 defunctionalisation \cite{Reynolds} \\
@@ -259,8 +278,9 @@ the resulting dual stack machine looks like something you could derive by lookin
 
 \subsection{Splitting into components}
 
-to use efficient existing memory components we have to split each step in parts to seperate memory read and write actions \\
-also splitting off the arithmetic operations makes it easier to reuse hardware for similiar computations
+to be able to use efficient existing memory components we have to extract the use of the datastack from the step function \\
+this means spliting each step in parts to seperate memory read and write actions \\
+also splitting off the arithmetic operations makes it easier to reuse hardware for similiar (arithmetic) computations
 
 \begin{lstlisting}
 type CtrlFun = Word32 -> Label -> CtrlStack ->
@@ -498,7 +518,8 @@ indexing in larger memory structures
 \subsection{Existing components as coprocessors}
 Complex arithmetic operations such as divisions, square root and trigonometric functions are usually implemented as seperate components that take many cycles to execute. \\
 a coprocessor can be described as just function in the same EDSL \\
-the coprocessor executes concurrently after forking it from main program, and you can wait for its finished results by joining it
+the coprocessor executes concurrently after forking it from main program, and you can wait for its finished results by joining it \\
+another reason to use the coprocessor abstraction is making multiple functions execute concurrently, instead of manual interleaving each cycle of those functions
 
 \subsection{Vectorisation support}
 One of the most important ways to achieve higher performance in specialized hardware is to do a lot things in parallel.
@@ -660,10 +681,12 @@ we need to take the type of variables in account, as variables of different size
 
 \subsection{Memory structure and addressing}
 
-emulating multiport memories with blockram
+emulating multiport memories with blockram \\
+local variables are addressed relative to the stack pointer \\
+explicit allocated memory is addressed absolutely, thus not allowed in recursion functions
 
 \subsection{Dealing with control flow}
-
+side effect free if expressions within a cycle just become part of an alu instruction \\
 problems with delays in the control path
 
 \subsection{Optimise timing and reuse}
@@ -672,6 +695,8 @@ alu output registers with bypass for higher clocks? \\
 common subexpression detection on alu expressions
 
 \subsection{Generating \clash code}
+each (co)processor in its own file \\
+all declarations except for the sequential logic functions are copied
 
 \subsection{Hardware tradeoffs}
 where do constants come from? \\
@@ -681,7 +706,7 @@ extra delay (register) before or after the alu to increase clock frequency
 
 \section{Related approaches}
 
-% \cite{Dan R. Ghica, Alex Smith, Satnam Singh: Geometry of Synthesis IV: compiling affine recursion into static hardware. ICFP 2011: 221-233}
+Geometry of Synthesis \cite{Ghica}
 
 \subsection{High level synthesis}
 Generates hardware from software written in ordinary programming languages (commonly C(++) or Matlab)\\
@@ -703,6 +728,8 @@ As a side effect derived instruction set are easy to compile for
 
 
 \subsection{Future work}
+implement the transformation process as GHC plugin instead of a fragile source to source compilation \\
+or convince the \clash developers to integrate this in their compiler\\
 
 Start from language semantics instead of specific programs \\
 Extend for other language features (memory/complex control flow) \\
