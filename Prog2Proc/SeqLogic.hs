@@ -30,6 +30,9 @@ emit = command . Emit
 alloc :: a -> SeqLogic s i o (Ref s a)
 alloc = command . Alloc
 
+allocArr :: Int -> SeqLogic s i o (Ref s [a])
+allocArr = command . AllocArr
+
 use :: Ref s a -> SeqLogic s i o a
 use = command . Load
 
@@ -39,11 +42,17 @@ use = command . Load
 (?) :: Ref s [a] -> Int -> Ref s a
 r ? i = indexRef i r
 
-start :: SeqLogic s () () a -> SeqLogic s i o (Coproc s a)
+start :: SeqLogic s j p a -> SeqLogic s i o (Coproc s j p a)
 start = command . Start
 
-finish :: Coproc s a -> SeqLogic s i o a
+finish :: Coproc s j p a -> SeqLogic s i o a
 finish = command . Finish
+
+infuse :: Coproc s j p x -> j -> SeqLogic s i o ()
+infuse c x = command (Infuse c x)
+
+extract :: Coproc s j a x -> SeqLogic s i o a
+extract = command . Extract
 
 loop :: (Enum k, Ord k) => k -> k -> (k -> SeqLogic s i o ()) -> SeqLogic s i o ()
 loop n m body 
