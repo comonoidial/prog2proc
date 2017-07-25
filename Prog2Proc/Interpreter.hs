@@ -104,11 +104,11 @@ interpretCycle (mi, mo) cps (Finish (Coproc cpr) `Then` r) = do
    (s, ci, co, p) <- readSTRef cpr
    case p of
       _ | s == Finished -> error "coprocessor already finished"
-      _ | isJust ci || isJust co -> error "coprocessor can't finish with filled channels"
+      Pure _ | isJust ci || isJust co -> error "coprocessor can't finish with filled channels"
       Pure x -> do
          writeSTRef cpr (Finished, Nothing, Nothing, p)
          interpretCycle (mi, mo) cps (r x)
-      _      -> do
+      _      -> do                    -- block on copro in progress
          mapM_ runCoproCycle cps
          return (cps, Finish (Coproc cpr) `Then` r, (mi, mo))
 interpretCycle (mi, mo) cps (Infuse (Coproc cpr) xi `Then` r) = do

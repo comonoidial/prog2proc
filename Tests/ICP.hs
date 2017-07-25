@@ -3,7 +3,7 @@ module Tests.ICP where
 import Control.Monad
 import Data.List (transpose)
 import Data.Word
-import CLaSH.Prelude (pack, unpack, shiftR)
+--import CLaSH.Prelude (pack, unpack, shiftR)
 
 import Prog2Proc.SeqLogic
 
@@ -26,17 +26,15 @@ icp = do
 	loop 0 (180) $ \ i -> do
 		-- get i'th value of px and replicate
 		let pointX = vecPx!!i
-		clock
 		let vecPointX = replicate 180 pointX
 		let vecDx = vecPointX .-. vecQx
 		clock
-		let vecDx2 = vecDx .*. vecDx
-		clock
 		-- get i'th value of py and replicate
 		let pointY = vecPy!!i
-		clock
 		let vecPointY = replicate 180 pointY
 		let vecDy = vecPointY .-. vecQy
+		clock
+		let vecDx2 = vecDx .*. vecDx
 		clock
 		let vecDy2 = vecDy .*. vecDy
 		clock
@@ -45,11 +43,9 @@ icp = do
 		let (j,k) = sortTree vecSquaredDist
 		clock
 		let mx0 = vecQx!!j
-		clock
-		let my0 = vecQy!!j
-		clock
 		let mx1 = vecQx!!k
 		clock
+		let my0 = vecQy!!j
 		let my1 = vecQy!!k
 		clock
 		let (nx, ny) = createNormalVector pointX pointY mx0 my0 mx1 my1
@@ -85,13 +81,36 @@ icp = do
 	let b'  = vecMy' .*. v1
 	clock
 	let b   = b' .+. b''
-	([u0, u1, u2, u3],r) <- call $ qr [v0,v1,v2,v3] -- r is the 4x4 upper triangluar matrix, q is 180x4
+	[u0, u1, u2, u3] <- call $ qr [v0,v1,v2,v3] -- r is the 4x4 upper triangluar matrix, q is 180x4
 --	t <- call $ mat_mul q' b -- t is the 4x1 vector of the sytem rx = t
 	t0 <- call $ u0 `dotp` b
 	t1 <- call $ u1 `dotp` b
 	t2 <- call $ u2 `dotp` b
-	t3  <- call $ u3 `dotp` b
-	[tx,ty,ct,st] <- call $ linSolver r [t0,t1,t2,t3]
+	t3 <- call $ u3 `dotp` b
+	clock
+	linSolv <- start $ linearSolver [t0,t1,t2,t3]
+	r33 <- call $ u3 `dotp` v3
+	infuse linSolv r33
+	r23 <- call $ u2 `dotp` v3
+	infuse linSolv r23
+	r22 <- call $ u2 `dotp` v2
+	infuse linSolv r22
+	r13 <- call $ u1 `dotp` v3
+	infuse linSolv r13
+	r12 <- call $ u1 `dotp` v2
+	infuse linSolv r12
+	r11 <- call $ u1 `dotp` v1
+	infuse linSolv r11
+	r03 <- call $ u0 `dotp` v3
+	infuse linSolv r03
+	r02 <- call $ u0 `dotp` v2
+	infuse linSolv r02
+	r01 <- call $ u0 `dotp` v1
+	infuse linSolv r01
+	r00 <- call $ u0 `dotp` v0
+	infuse linSolv r00
+	clock
+	[tx,ty,ct,st] <- finish linSolv
 	clock
 --	x0 = tx
 --	x1 = ty
@@ -121,38 +140,49 @@ icp = do
 	clock
 	emit (vecPy')
 
-
-linSolver [[r00,_,_,_],[r01,r11,_,_],[r02,r12,r22,_],[r03,r13,r23,r33]] [t0,t1,t2,t3] = do
+linearSolver :: [Float] -> SeqLogic s Float () [Float]
+linearSolver [t0,t1,t2,t3] = do
 	-- x3 = t3/r33
+	r33 <- receive
 	let x3 = t3 / r33
 	clock
 
 	-- x2 = (t2-r23*x3)/r22	
-	let r23x3	= r23 * x3
+	r23 <- receive
+	let r23x3 = r23 * x3
 	clock
-	let x2'	= t2 - r23x3
+	let x2' = t2 - r23x3
 	clock
+	r22 <- receive
 	let x2 = x2' / r22
 	clock
 
 	-- x1 = (t1 - r12x2 - r13x3) / r11
-	let r12x2 = r12 * x2
-	clock
+	r13 <- receive
 	let r13x3 = r13 * x3
+	clock
+	r12 <- receive
+	let r12x2 = r12 * x2
 	clock
 	let x1'' = t1 - r12x2
 	clock
 	let x1' = x1'' - r13x3
 	clock
+	r11 <- receive
 	let x1 = x1' / r11
 	clock
 
 	-- x0 = (t0 - r01x1 - r02x2 - r03x3) / r00
+	r03 <- receive
+	let r03x3 = r03 * x3
+	clock
+	r02 <- receive
+	let r02x2 = r02 * x2
+	clock
+	r01 <- receive
 	let r01x1 = r01 * x1
 	clock
 	let r02x2 = r02 * x2
-	clock
-	let r03x3 = r03 * x3
 	clock
 	let x0''' = t0 - r01x1
 	clock
@@ -160,11 +190,12 @@ linSolver [[r00,_,_,_],[r01,r11,_,_],[r02,r12,r22,_],[r03,r13,r23,r33]] [t0,t1,t
 	clock
 	let x0' = x0'' - r03x3
 	clock
+	r00 <- receive
 	let x0 = x0' / r00
 	clock
 	return [x0,x1,x2,x3]
 
-qr :: [[Float]] -> SeqLogic s [Float] [Float] ([[Float]],[[Float]])
+qr :: [[Float]] -> SeqLogic s [Float] [Float] [[Float]]
 qr [v0,v1,v2,v3] = do
 	let y0 = v0
 	u0 <- call $ norm y0
@@ -195,12 +226,7 @@ qr [v0,v1,v2,v3] = do
 	clock
 	u3 <- call $ norm y3
 
-	let q' = [u0, u1, u2, u3]
-
-	let a = transpose [v0,v1,v2,v3]
-
-	r <- call $ mat_mul q' a
-	return (q',r)
+	return [u0, u1, u2, u3]
 
 createNormalVector ::  Float -> Float -> Float -> Float -> Float -> Float -> (Float,Float)
 createNormalVector px py mx0 my0 mx1 my1 = (nx, ny) where
@@ -253,8 +279,8 @@ closestTwoOfFourPoints (a, ia, b, ib) (x, ix, y, iy) =
 		(False, _, False)	-> (x, ix, y, iy)
 
 
---invSqrt x = 1/(sqrt x)
-	
+invSqrt x = 1/(sqrt x)
+{-
 invSqrt :: Float -> Float
 invSqrt x = y where
 	bx = pack x
@@ -262,7 +288,7 @@ invSqrt x = y where
 	x2 = x * 0.5
 	y' = unpack ((pack (1597463007 :: Word32)) - bx2) :: Float
 	y = y' * (1.5 - (x2 * y' * y'))
-
+-}
 --invSqrt :: Float -> Float
 --invSqrt x = do
 --	let bx = pack x
@@ -303,22 +329,6 @@ dotp_scale vs us = do
    let n = sum zs
    clock
    return (n *. us)
-
--- matrix multiplication using one dot product at a time
-mat_mul :: [[Float]] -> [[Float]] -> SeqLogic s i o [[Float]]
-mat_mul m1 m2 = do
-   let m2' = transpose m2
-   call $ seqMap (row_mul m1) m2'
-
-row_mul m1 v = seqMap (dotp v) m1
-
--- sequentially mapping over a list using an extra cycle for each element
-seqMap :: (a -> SeqLogic s i o b) -> [a] -> SeqLogic s i o [b]
-seqMap f [] = return []
-seqMap f (x:xs) = do
-   y <- f x
-   ys <- call $ seqMap f xs
-   return (y:ys)
 
 n *. xs = map (n*) xs
 n +. xs = map (+n) xs
