@@ -85,29 +85,44 @@ icp = do
 	let b'  = vecMy' .*. v1
 	clock
 	let b   = b' .+. b''
-	clock
 	([u0, u1, u2, u3],r) <- call $ qr [v0,v1,v2,v3] -- r is the 4x4 upper triangluar matrix, q is 180x4
-	clock
-	emit u0
 --	t <- call $ mat_mul q' b -- t is the 4x1 vector of the sytem rx = t
 	t0 <- call $ u0 `dotp` b
-	clock
-	emit u1
 	t1 <- call $ u1 `dotp` b
-	clock
-	emit u2
 	t2 <- call $ u2 `dotp` b
-	clock
-	emit u3
 	t3  <- call $ u3 `dotp` b
+	[tx,ty,ct,st] <- call $ linSolver r [t0,t1,t2,t3]
 	clock
-	[x0,x1,x2,x3] <- call $ linSolver r [t0,t1,t2,t3]
---	emit [t0,t1,t2,t3]
+--	x0 = tx
+--	x1 = ty
+--	x2 = cos theta = ct
+--	x3 = sin theta = st
+	-- vecPx' = vecPx * ct - vecPy * st + tx
+	-- vecPy' = vecPy * ct + vecPx * st + ty
+	let vecPxCt = ct *. vecPx
 	clock
---	emit [x0,x1,x2,x3]
+	let vecPySt = st *. vecPy
+	clock
+	let vecPxCtPySt = vecPxCt .-. vecPySt
+	clock
+	let vecPx' = tx +. vecPxCtPySt
+	clock
+
+	let vecPyCt = ct *. vecPy
+	clock
+	let vecPxSt = st *. vecPx
+	clock
+	let vecPyCtPxSt = vecPyCt .+. vecPxSt
+	clock
+	let vecPy' = ty +. vecPyCtPxSt
+	clock
+
+	emit (vecPx')
+	clock
+	emit (vecPy')
 
 
-linSolver [[r00,r01,r02,r03],[_r10,r11,r12,r13],[_r20,_r21,r22,r23],[_r30,_r31,_r32,r33]] [t0,t1,t2,t3] = do
+linSolver [[r00,_,_,_],[r01,r11,_,_],[r02,r12,r22,_],[r03,r13,r23,r33]] [t0,t1,t2,t3] = do
 	-- x3 = t3/r33
 	let x3 = t3 / r33
 	clock
@@ -117,7 +132,7 @@ linSolver [[r00,r01,r02,r03],[_r10,r11,r12,r13],[_r20,_r21,r22,r23],[_r30,_r31,_
 	clock
 	let x2'	= t2 - r23x3
 	clock
-	let x2		= x2' / r22
+	let x2 = x2' / r22
 	clock
 
 	-- x1 = (t1 - r12x2 - r13x3) / r11
@@ -139,7 +154,7 @@ linSolver [[r00,r01,r02,r03],[_r10,r11,r12,r13],[_r20,_r21,r22,r23],[_r30,_r31,_
 	clock
 	let r03x3 = r03 * x3
 	clock
-	let x0''' = t1 - r01x1
+	let x0''' = t0 - r01x1
 	clock
 	let x0'' = x0''' - r02x2
 	clock
@@ -149,63 +164,45 @@ linSolver [[r00,r01,r02,r03],[_r10,r11,r12,r13],[_r20,_r21,r22,r23],[_r30,_r31,_
 	clock
 	return [x0,x1,x2,x3]
 
-
--- implementation of some kind of QR decomposition derived from Hendrik's masters project ICP code
 qr :: [[Float]] -> SeqLogic s [Float] [Float] ([[Float]],[[Float]])
 qr [v0,v1,v2,v3] = do
-   
-   let y0 = v0
-   u0 <- call $ norm y0
+	let y0 = v0
+	u0 <- call $ norm y0
+	clock
 
-   v1_u0 <- call $ v1 `dotp_scale` u0
-   clock
-   let y1 = v1 .-. v1_u0
-   
-   u1 <- call $ norm y1
+	v1_u0 <- call $ v1 `dotp_scale` u0
+	let y1 = v1 .-. v1_u0
+	clock
+	u1 <- call $ norm y1
+	clock
 
-   v2_u0 <- call $ v2 `dotp_scale` u0
+	v2_u0 <- call $ v2 `dotp_scale` u0
+	v2_u1 <- call $ v2 `dotp_scale` u1
+	let sa = v2 .-. v2_u0
+	clock
+	let y2 = sa .-. v2_u1
+	clock
+	u2 <- call $ norm y2
+	
+	v3_u0 <- call $ v3 `dotp_scale` u0
+	v3_u1 <- call $ v3 `dotp_scale` u1
+	v3_u2 <- call $ v3 `dotp_scale` u2
+	let sb = v3 .-. v3_u0
+	clock
+	let sc = sb .-. v3_u1
+	clock
+	let y3 = sc .-. v3_u2
+	clock
+	u3 <- call $ norm y3
 
-   v2_u1 <- call $ v2 `dotp_scale` u1
-   clock
-   let sa = v2 .-. v2_u0
-   clock
-   let y2 = sa .-. v2_u1
+	let q' = [u0, u1, u2, u3]
 
-   u2 <- call $ norm y2
+	let a = transpose [v0,v1,v2,v3]
 
-   v3_u0 <- call $ v3 `dotp_scale` u0
+	r <- call $ mat_mul q' a
+	return (q',r)
 
-   v3_u1 <- call $ v3 `dotp_scale` u1
-
-   v3_u2 <- call $ v3 `dotp_scale` u2
-   clock
-   let sb = v3 .-. v3_u0
-   clock
-   let sc = sb .-. v3_u1
-   clock
-   let y3 = sc .-. v3_u2
-
-   u3 <- call $ norm y3
-   clock
-   
-   let q' = [u0, u1, u2, u3]
-
-   let a = transpose [v0,v1,v2,v3]
-   
-   r <- call $ mat_mul q' a
-   clock
-   return (q',r)
-
-{-
-   clock
-   lfc <- start $ linFibCo ()
-   clock
-   n <- finish lfc
-   clock
-   emit [[fromIntegral n]]
--}
-
---createVector ::  Float -> Float -> Float -> Float -> Float -> Float -> (Float,Float)
+createNormalVector ::  Float -> Float -> Float -> Float -> Float -> Float -> (Float,Float)
 createNormalVector px py mx0 my0 mx1 my1 = (nx, ny) where
 	(lx, ly, rx, ry) 	| mx0 < mx1	= (mx0, my0, mx1, my1)	-- important the the points are sorted
 						| otherwise	= (mx1, my1, mx0, my0)
@@ -256,16 +253,32 @@ closestTwoOfFourPoints (a, ia, b, ib) (x, ix, y, iy) =
 		(False, _, False)	-> (x, ix, y, iy)
 
 
-invSqrt x = (1/sqrt x)
+--invSqrt x = 1/(sqrt x)
 	
---invSqrt :: Float -> Float
---invSqrt x = y where
---	bx = pack x
---	bx2 = shiftR bx 1
---	x2 = x * 0.5
---	y' = unpack ((pack (1597463007 :: Word32)) - bx2) :: Float
---	y = y' * (1.5 - (x2 * y' * y'))
+invSqrt :: Float -> Float
+invSqrt x = y where
+	bx = pack x
+	bx2 = shiftR bx 1
+	x2 = x * 0.5
+	y' = unpack ((pack (1597463007 :: Word32)) - bx2) :: Float
+	y = y' * (1.5 - (x2 * y' * y'))
 
+--invSqrt :: Float -> Float
+--invSqrt x = do
+--	let bx = pack x
+--	let	bx2 = shiftR bx 1
+--	let x2 = x * 0.5
+--	clock
+--	let y' = unpack ((pack (1597463007 :: Word32)) - bx2) :: Float
+--	clock
+----	y = y' * (1.5 - (x2 * y' * y'))
+--	let y2' = y' * y'
+--	clock
+--	let x2y2 = x2 * y2'
+--	clock
+--	let y'' = 1.5 - x2y2
+--	clock
+--	return (y' * y'')
 
 norm :: [Float] -> SeqLogic s i o [Float]
 norm xs = do
@@ -308,6 +321,7 @@ seqMap f (x:xs) = do
    return (y:ys)
 
 n *. xs = map (n*) xs
+n +. xs = map (+n) xs
 (.*.) = zipWith (*)
 (.+.) = zipWith (+)
 (.-.) = zipWith (-)
