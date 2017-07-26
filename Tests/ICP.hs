@@ -23,7 +23,7 @@ icp = do
 	vecMx <- alloc (replicate 180 undefined)
 	vecMy <- alloc (replicate 180 undefined)
 
-	loop 0 (180) $ \ i -> do
+	loop 0 (180-1) $ \i -> do
 		-- get i'th value of px and replicate
 		let pointX = vecPx!!i
 		let vecPointX = replicate 180 pointX
@@ -58,21 +58,26 @@ icp = do
 		clock
 		vecNy?i <~ ny
 
+	v <- allocArr 4
 	v0 <- use vecNx
+	v?0 <~ v0
 	clock
 	v1 <- use vecNy
+	v?1 <~ v1
 	clock
 	let v2'' = vecPx .*. v0
 	clock
 	let v2'  = vecPy .*. v1
 	clock
 	let v2   = v2' .+. v2''
+	v?2 <~ v2
 	clock
 	let v3'' = vecPx .*. v1
 	clock
 	let v3'  = vecPy .*. v0
 	clock
 	let v3   = v3'' .-. v3'
+	v?3 <~ v3
 	clock
 	vecMx' <- use vecMx
 	let b'' = vecMx' .*. v0
@@ -82,40 +87,37 @@ icp = do
 	clock
 	let b   = b' .+. b''
 	[u0, u1, u2, u3] <- call $ qr [v0,v1,v2,v3] -- r is the 4x4 upper triangluar matrix, q is 180x4
+	u <- allocArr 4
 --	t <- call $ mat_mul q' b -- t is the 4x1 vector of the sytem rx = t
-	t0 <- call $ u0 `dotp` b
-	t1 <- call $ u1 `dotp` b
-	t2 <- call $ u2 `dotp` b
-	t3 <- call $ u3 `dotp` b
+	u?0 <~ u0
 	clock
-	linSolv <- start $ linearSolver [t0,t1,t2,t3]
-	r33 <- call $ u3 `dotp` v3
-	infuse linSolv r33
-	r23 <- call $ u2 `dotp` v3
-	infuse linSolv r23
-	r22 <- call $ u2 `dotp` v2
-	infuse linSolv r22
-	r13 <- call $ u1 `dotp` v3
-	infuse linSolv r13
-	r12 <- call $ u1 `dotp` v2
-	infuse linSolv r12
-	r11 <- call $ u1 `dotp` v1
-	infuse linSolv r11
-	r03 <- call $ u0 `dotp` v3
-	infuse linSolv r03
-	r02 <- call $ u0 `dotp` v2
-	infuse linSolv r02
-	r01 <- call $ u0 `dotp` v1
-	infuse linSolv r01
-	r00 <- call $ u0 `dotp` v0
-	infuse linSolv r00
+	u?1 <~ u1
 	clock
-	[tx,ty,ct,st] <- finish linSolv
+	u?2 <~ u2
 	clock
---	x0 = tx
---	x1 = ty
---	x2 = cos theta = ct
---	x3 = sin theta = st
+	u?3 <~ u3
+	clock
+	x <- allocArr 4
+	linSolv <- start linearSolver
+	loop 0 3 $ \j' -> let j = 3-j' in do
+		u_j <- use (u?j)
+		t_j <- call $ u_j `dotp` b
+		infuse linSolv t_j
+		loop 0 j' $ \k' -> let k = 3-k' in do
+			v_k <- use (v?k)
+			r_jk <- call $ u_j `dotp` v_k
+			infuse linSolv r_jk
+		x_j <- extract linSolv
+		x?j <~ x_j
+	finish linSolv
+	tx <- use (x?0) -- x0 = tx
+	clock
+	ty <- use (x?1) -- x1 = ty
+	clock
+	ct <- use (x?2) -- x2 = cos theta = ct
+	clock
+	st <- use (x?3) -- x3 = sin theta = st 
+	clock
 	-- vecPx' = vecPx * ct - vecPy * st + tx
 	-- vecPy' = vecPy * ct + vecPx * st + ty
 	let vecPxCt = ct *. vecPx
@@ -140,14 +142,19 @@ icp = do
 	clock
 	emit (vecPy')
 
-linearSolver :: [Float] -> SeqLogic s Float () [Float]
-linearSolver [t0,t1,t2,t3] = do
+linearSolver :: SeqLogic s Float Float ()
+linearSolver = do
 	-- x3 = t3/r33
+	t3 <- receive
+	clock
 	r33 <- receive
 	let x3 = t3 / r33
+	emit x3
 	clock
 
 	-- x2 = (t2-r23*x3)/r22	
+	t2 <- receive
+	clock
 	r23 <- receive
 	let r23x3 = r23 * x3
 	clock
@@ -155,9 +162,12 @@ linearSolver [t0,t1,t2,t3] = do
 	clock
 	r22 <- receive
 	let x2 = x2' / r22
+	emit x2
 	clock
 
 	-- x1 = (t1 - r12x2 - r13x3) / r11
+	t1 <- receive
+	clock
 	r13 <- receive
 	let r13x3 = r13 * x3
 	clock
@@ -170,9 +180,12 @@ linearSolver [t0,t1,t2,t3] = do
 	clock
 	r11 <- receive
 	let x1 = x1' / r11
+	emit x1
 	clock
 
 	-- x0 = (t0 - r01x1 - r02x2 - r03x3) / r00
+	t0 <- receive
+	clock
 	r03 <- receive
 	let r03x3 = r03 * x3
 	clock
@@ -192,8 +205,8 @@ linearSolver [t0,t1,t2,t3] = do
 	clock
 	r00 <- receive
 	let x0 = x0' / r00
-	clock
-	return [x0,x1,x2,x3]
+	emit x0
+	return ()
 
 qr :: [[Float]] -> SeqLogic s [Float] [Float] [[Float]]
 qr [v0,v1,v2,v3] = do

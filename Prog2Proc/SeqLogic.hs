@@ -56,7 +56,7 @@ extract = command . Extract
 
 loop :: (Enum k, Ord k) => k -> k -> (k -> SeqLogic s i o ()) -> SeqLogic s i o ()
 loop n m body 
-  | n < m     = clock >> body n >> loop (succ n) m body
+  | n <= m     = clock >> body n >> loop (succ n) m body
   | otherwise = clock >> return ()
 
 mapS :: (a -> b) -> [[a]] -> SeqLogic s i o [[b]]
