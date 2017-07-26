@@ -25,10 +25,10 @@
 
 \begin{document}
 \lstset{language=Haskell, basewidth=1.2ex, basicstyle=\codefamily, identifierstyle=\itshape,
- deletekeywords={String,Maybe,Just,Nothing,map,mapM,split,bracket,when,Bool,Int,div,round,sin,maxBound,fromIntegral,odd,True,False,Eq,negate,Double,Enum,index,fromEnum,not,accum,Functor,min,max,next,lookup,const,transpose,sum,sqrt,zipWith}} 
+ deletekeywords={String,Maybe,Just,Nothing,map,mapM,split,bracket,when,Bool,Int,div,round,sin,maxBound,fromIntegral,odd,True,False,Eq,negate,Double,Enum,index,fromEnum,not,accum,Functor,min,max,next,lookup,const,transpose,sum,sqrt,zip,zipWith,replicate,undefined,splitAt,length,foldl1,Float,otherwise}} 
 
 \title{Tranforming Programs into Application Specific Processors}
-\authorinfo{Arjan~Boeijink \and Hendrik Folmer \and Jan~Kuper}{University of Twente}{\{w.a.boeijink,h.h.folmer,j.kuper\}@utwente.nl}
+\authorinfo{Arjan~Boeijink \and Hendrik Folmer \and Jan~Kuper \and Marco J.G. Bekooij}{University of Twente}{\{w.a.boeijink,h.h.folmer,j.kuper\}@utwente.nl}
 
 \maketitle
 
@@ -62,30 +62,60 @@ FPGAs became large enough for many applications.
 Functional languages have a long history with hardware design \cite{Sheeran2005}
 
 \subsection{Hardware in Haskell using \clash}
-\clash \cite{Baaij} is a subset of Haskell that can be compiled to widely supported lower level hardware description languages such as Verilog and VHDL.
-Even though you can use most abstractions that Haskell has to offer, \clash is still a structural hardware description language.
-
+Designing hardware architectures for FPGA is traditionally done using low-level hardware description languagles (HDLs) like Verilog or VHDL. Functional languages have a long history with hardware design \cite{Sheeran2005}. \clash \cite{Baaij} is a subset of Haskell that can be compiled to widely supported lower level HDLs. Even though you can use most abstractions that Haskell has to offer, \clash is still a structural hardware description language.
 \subsection{The hardware design process in practice}
+Designing hardware from a mathematical perspective using \clash is described in [TODO] and contains the following steps:
 \begin{enumerate}
  \item Choose algorithm
- \item Convert math/pseudo code to executable Haskell
- \item fixed size vectors
- \item select numeric precision
- \item synthesize for hardware resource costs
- \item split algorithm in steps to reduce data access to feasible memory bandwith
- \item find patterns in algorithm to enable reuse of hardware components
- \item break long latency computation in parts to enable good clock frequencies
- \item write glue logic/control for pipelining and multistep computations
- \item synthesize design for target hardware platform
- \item iterate parts of this process until satisfied with performance/costs
 \end{enumerate}
-The nice aspect of this process is that every refinement of the design is described as executable haskell code.
-Thus you can easily compare outputs of each step and see the impact of design choices on precission.
-The downside is that you often come to conclusion that the algoritm choosen doesn't achieve the performance/costs you want. So you have to go through all steps again.
-Steps 6 to 9 take the most effort, and step 9 is very error prone and can be very complex.
+While choosing an algorithm it is important to keep in mind how well the target hardware could potentially solve the problem. FPGAs are suitable for reusing computational structures and consistent data streams.
+\begin{enumerate}%[resume]
+ \item Specify math in executable Haskell
+\end{enumerate}
+text..
+\begin{enumerate}%[resume]
+ \item Convert Haskell to \clash
+\end{enumerate}
+Converting the executable Haskell to executable \clash consist mainly of using fixed size vectors in stead of lists, and selecting a numeric precision for data. \clash does not support recursion so either rewrite recursion in higher-order functions or create a mealy machine structure. Once the entire design is specified the \clash -compiler can automatically generate a hardware architecture in VHDL or Verilog which can be synthesized to determine the hardware resource costs.
+\begin{enumerate}%[resume]
+ \item Determine resource constrains
+\end{enumerate}
+The synthesized architecture in \clash consumes a certain amount of hardware resources but the target device has a limited amount of resources available. These resource constrains are in terms of memory, memory bandwidth, logical elements, and digital signal processors (DSPs). There are also constrains on latency and throughput.
+\begin{enumerate}%[resume]
+ \item ... time-area trade-off
+\end{enumerate}
+There are several methods to create a feasible design for the given resource constrains. One could split the algorithm in steps to reduce data access to limit the memory bandwidth. Finding patterns in the algorithm allows for the reuse of hardware components over time. This limits both memory and computational area on an FPGA. Breaking long latency computation in parts enable faster clock frequencies which influences latency and throughput. Pipelining and multistep computation requires glue logic/control to operate. During the time-area trade-off one can iterate through all the above mentioned methods. 
+
+The nice aspect of this process is that every step the result can be evaluated/simulated because it is executable Haskell/\clash code. In the time-area trade-off  the impact of every design choice can be evaluated. The downside of this method, especially when iteratively designing a time-area trade-off, is that it comes down to the designers knowledge which technique is necessary to make a feasible design.
+
+Creating glue logic/control to operate the algorithm is error prone and can be complex. This paper presents a method of deducing the control- and data-path from the algorithm, given the algorithms execution order??
+
+%\subsection{Hardware in Haskell using \clash}
+%\clash \cite{Baaij} is a subset of Haskell that can be compiled to widely supported lower level hardware description languages such as Verilog and VHDL.
+%Even though you can use most abstractions that Haskell has to offer, \clash is still a structural hardware description language.
+%
+%\subsection{The hardware design process in practice}
+%\begin{enumerate}
+% \item Choose algorithm
+% \item Convert math/pseudo code to executable Haskell
+% \item fixed size vectors
+% \item select numeric precision
+% \item synthesize for hardware resource costs
+% \item split algorithm in steps to reduce data access to feasible memory bandwith
+% \item find patterns in algorithm to enable reuse of hardware components
+% \item break long latency computation in parts to enable good clock frequencies
+% \item write glue logic/control for pipelining and multistep computations
+% \item synthesize design for target hardware platform
+% \item iterate parts of this process until satisfied with performance/costs
+%\end{enumerate}
+%The nice aspect of this process is that every refinement of the design is described as executable haskell code.
+%Thus you can easily compare outputs of each step and see the impact of design choices on precission.
+%The downside is that you often come to conclusion that the algoritm choosen doesn't achieve the performance/costs you want. So you have to go through all steps again.
+%Steps 6 to 9 take the most effort, and step 9 is very error prone and can be very complex.
 
 \section{Rewriting a program into a processor}
-as a running example in this section we use a binary variant of greatest common divisor, that doesn't use any complex arithmetic operation:
+as a running example in this section we use a binary variant of greatest common divisor, that doesn't use any complex arithmetic operation \\
+the use of multiple recursive functions and a data dependent recursion depth makes it non trivial to implement this computation in hardware
 \begin{lstlisting}
 binGCD :: Word32 -> Word32 -> Word32       
 binGCD x 0 = x
@@ -108,6 +138,7 @@ the count trailing zeros could been implemented as a primitive operation as a fo
 the first step is splitting up expressions which are too complex to execute within a single clock cycle \\
 this can be done by introducing let expression like in the conversion to administrative normal form \cite{ANF} \\
 the question is which expressions to define as trivial, for example some arithmetic operations mights be cheap enough to keep nested \\
+for this example we will split up all nested expression, in order to produce a very simple processor
 \begin{lstlisting}
 binGCD x y = 
   if (y == 0) then x
@@ -211,8 +242,9 @@ step (Cont g)        (CC x y a b   : cs) =
 \draw[<->] (con.south) -- (ck.north);
 \end{tikzpicture}
 \caption{Hardware structure of the stack machine}
+\label{fig:stack}
 \end{figure}
-
+Figure \ref{fig:stack} shows the stack machine structure as hardware
 \subsection{Separating the data stack}
 
 lots of data copied from one state/continuation to another \\
@@ -302,6 +334,8 @@ step CC  = (next       ,peek 2,peek 1, min  ,push)
 \end{lstlisting}
 \lstset{basicstyle=\codefamily}
 
+[TODO] check if such a description would be synthesizable in \clash{}
+
 \subsection{Control by microcode}
 
 each step now produces a set of functions, however functions can not directly exist in hardware \\
@@ -371,7 +405,7 @@ ctrl (Call f  ) = call f
 
 \subsection{Synthesisable implementation in \clash}
 the main effort of converting into a synthesisable hardware description is replacing the lists for the control and data stack with memory components and stack pointers \\
-both stackpointer and the program counter need to be saved in a register \\
+both stackpointers and the program counter need to be stored in a register \\
 the $microcode$ and $alu$ code from previous step can be directly reused with any change \\
 all components are then connected together in the toplevel of the processor description \\
 this is straightforward except for having to work with Signal's instead of pure values
@@ -468,9 +502,11 @@ stackMod (PopNPush n) dSP z =
 \draw[->, densely dotted] ([xshift=3em] dec.south) -- ([xshift=0.8em]sp.north);
 \end{tikzpicture}
 \caption{Architecture of derived processor}
+\label{fig:proc}
 \end{figure}
+Figure \ref{fig:proc} shows a schematic of the derived processor architecture
 
-\subsection{Differences with common processors}
+\subsection{Differences with general purpose processors}
 
 The downside of using horizontal microcode is that it costs a lot of bits to encode each step in the program \\
 also writing microcode by hand is a lot of work \\
@@ -497,10 +533,10 @@ sim ds (pc:cs) = sim ds' cs' where
   z = alu op x y 
   ds' = stackMod g z ds
   cs' = ctrl f z (pc : cs)
-
 \end{lstlisting}
 
 heap memory \\
+pipelining \\
 input/ouput 
 
 \section{A DSL for explicitly clocked programs}
@@ -511,9 +547,17 @@ The decision of how much computation to do in each step is a complex optimisatio
 Thus we leave it up to the hardware designer to explicitly decide how to group computations into clock cycles.
 Also the timing with respect to other components can be important, so the order of execution of each cycle needs to be explicit.
 
-\subsection{More control over memory}
+\subsection{Expressing control flow}
+function calls \\
+inline functions \\
+conditional expression/statements \\
+loops \\
+external communication
+
+\subsection{Mutable data and explicti memory access}
 explicit allocation of writable memory addresses\\
-indexing in larger memory structures
+indexing in larger memory structures \\
+using arrays
 
 \subsection{Existing components as coprocessors}
 Complex arithmetic operations such as divisions, square root and trigonometric functions are usually implemented as seperate components that take many cycles to execute. \\
@@ -548,64 +592,281 @@ for coprocessors a list of active ones is maintained and each one is run at ever
 
 
 
-\section{Example application: ICP}
+\section{Example application: iterative closest point}
 iterative closest point is an algorithm used for position finding using a laser range finder \cite{Robin:Hendrik}
 
 \lstset{basicstyle=\codesmall}
 
 \begin{lstlisting}
-qr :: SeqLogic s [Double] [[Double]] ()
-qr = do
-   v0 <- receive
-   clock
-   v1 <- receive
-   clock
-   v2 <- receive
-   clock
-   v3 <- receive
-   clock
-   
-   let y0 = v0
-   u0 <- call $ norm y0
+icp :: SeqLogic s [Float] [Float] ()
+icp = do
+	vecPx <- receive
+	clock
+	vecPy <- receive
+	clock
+	vecQx <- receive
+	clock
+	vecQy <- receive
+	clock
 
-   v1_u0 <- call $ v1 `dotp_scale` u0
-   clock
-   let y1 = v1 .-. v1_u0
-   
-   u1 <- call $ norm y1
+	vecNx <- alloc (replicate 180 undefined)
+	vecNy <- alloc (replicate 180 undefined)
+	vecMx <- alloc (replicate 180 undefined)
+	vecMy <- alloc (replicate 180 undefined)
 
-   v2_u0 <- call $ v2 `dotp_scale` u0
+	loop 0 (180-1) $ \i -> do
+		-- get i'th value of px and replicate
+		let pointX = vecPx!!i
+		let vecPointX = replicate 180 pointX
+		let vecDx = vecPointX .-. vecQx
+		clock
+		-- get i'th value of py and replicate
+		let pointY = vecPy!!i
+		let vecPointY = replicate 180 pointY
+		let vecDy = vecPointY .-. vecQy
+		clock
+		let vecDx2 = vecDx .*. vecDx
+		clock
+		let vecDy2 = vecDy .*. vecDy
+		clock
+		let vecSquaredDist = vecDx2 .+. vecDy2
+		clock
+		let (j,k) = sortTree vecSquaredDist
+		clock
+		let mx0 = vecQx!!j
+		let mx1 = vecQx!!k
+		clock
+		let my0 = vecQy!!j
+		let my1 = vecQy!!k
+		clock
+		let (nx, ny) = createNormalVector pointX pointY mx0 my0 mx1 my1
+		clock
+		vecMx?i <~ mx0
+		clock
+		vecMy?i <~ my0
+		clock
+		vecNx?i <~ nx
+		clock
+		vecNy?i <~ ny
 
-   v2_u1 <- call $ v2 `dotp_scale` u1
-   clock
-   let sa = v2 .-. v2_u0
-   clock
-   let y2 = sa .-. v2_u1
+	v <- allocArr 4
+	v0 <- use vecNx
+	v?0 <~ v0
+	clock
+	v1 <- use vecNy
+	v?1 <~ v1
+	clock
+	let v2'' = vecPx .*. v0
+	clock
+	let v2'  = vecPy .*. v1
+	clock
+	let v2   = v2' .+. v2''
+	v?2 <~ v2
+	clock
+	let v3'' = vecPx .*. v1
+	clock
+	let v3'  = vecPy .*. v0
+	clock
+	let v3   = v3'' .-. v3'
+	v?3 <~ v3
+	clock
+	vecMx' <- use vecMx
+	let b'' = vecMx' .*. v0
+	clock
+	vecMy' <- use vecMy
+	let b'  = vecMy' .*. v1
+	clock
+	let b   = b' .+. b''
+\end{lstlisting}
+	
+\begin{lstlisting}
+	[u0, u1, u2, u3] <- call $ qr [v0,v1,v2,v3]
+-- r is the 4x4 upper triangluar matrix, q is 180x4
+	u <- allocArr 4
+--	t <- call $ mat_mul q' b -- t is the 4x1 vector of the sytem rx = t
+	u?0 <~ u0
+	clock
+	u?1 <~ u1
+	clock
+	u?2 <~ u2
+	clock
+	u?3 <~ u3
+	clock
+	x <- allocArr 4
+	linSolv <- start linearSolver
+	loop 0 3 $ \j' -> let j = 3-j' in do
+		u_j <- use (u?j)
+		t_j <- call $ u_j `dotp` b
+		infuse linSolv t_j
+		loop 0 j' $ \k' -> let k = 3-k' in do
+			v_k <- use (v?k)
+			r_jk <- call $ u_j `dotp` v_k
+			infuse linSolv r_jk
+		x_j <- extract linSolv
+		x?j <~ x_j
+	finish linSolv
+	tx <- use (x?0) -- x0 = tx
+	clock
+	ty <- use (x?1) -- x1 = ty
+	clock
+	ct <- use (x?2) -- x2 = cos theta = ct
+	clock
+	st <- use (x?3) -- x3 = sin theta = st 
+	clock
+	-- vecPx' = vecPx * ct - vecPy * st + tx
+	-- vecPy' = vecPy * ct + vecPx * st + ty
+	let vecPxCt = ct *. vecPx
+	clock
+	let vecPySt = st *. vecPy
+	clock
+	let vecPxCtPySt = vecPxCt .-. vecPySt
+	clock
+	let vecPx' = tx +. vecPxCtPySt
+	clock
 
-   u2 <- call $ norm y2
+	let vecPyCt = ct *. vecPy
+	clock
+	let vecPxSt = st *. vecPx
+	clock
+	let vecPyCtPxSt = vecPyCt .+. vecPxSt
+	clock
+	let vecPy' = ty +. vecPyCtPxSt
+	clock
 
-   v3_u0 <- call $ v3 `dotp_scale` u0
+	emit (vecPx')
+	clock
+	emit (vecPy')
+\end{lstlisting}
 
-   v3_u1 <- call $ v3 `dotp_scale` u1
+solving the linear equations of an upper triangular matrix
+\begin{lstlisting}
+linearSolver :: SeqLogic s Float Float ()
+linearSolver = do
+	-- x3 = t3/r33
+	t3 <- receive
+	clock
+	r33 <- receive
+	let x3 = t3 / r33
+	emit x3
+	clock
 
-   v3_u2 <- call $ v3 `dotp_scale` u2
-   clock
-   let sb = v3 .-. v3_u0
-   clock
-   let sc = sb .-. v3_u1
-   clock
-   let y3 = sc .-. v3_u2
+	-- x2 = (t2-r23*x3)/r22	
+	t2 <- receive
+	clock
+	r23 <- receive
+	let r23x3 = r23 * x3
+	clock
+	let x2' = t2 - r23x3
+	clock
+	r22 <- receive
+	let x2 = x2' / r22
+	emit x2
+	clock
 
-   u3 <- call $ norm y3
-   clock
-   
-   let q' = [u0, u1, u2, u3]
+	-- x1 = (t1 - r12x2 - r13x3) / r11
+	t1 <- receive
+	clock
+	r13 <- receive
+	let r13x3 = r13 * x3
+	clock
+	r12 <- receive
+	let r12x2 = r12 * x2
+	clock
+	let x1'' = t1 - r12x2
+	clock
+	let x1' = x1'' - r13x3
+	clock
+	r11 <- receive
+	let x1 = x1' / r11
+	emit x1
+	clock
 
-   let a = transpose [v0,v1,v2,v3]
-   
-   r <- call $ mat_mul q' a
-   clock
-   emit (transpose r)
+	-- x0 = (t0 - r01x1 - r02x2 - r03x3) / r00
+	t0 <- receive
+	clock
+	r03 <- receive
+	let r03x3 = r03 * x3
+	clock
+	r02 <- receive
+	let r02x2 = r02 * x2
+	clock
+	r01 <- receive
+	let r01x1 = r01 * x1
+	clock
+	let r02x2 = r02 * x2
+	clock
+	let x0''' = t0 - r01x1
+	clock
+	let x0'' = x0''' - r02x2
+	clock
+	let x0' = x0'' - r03x3
+	clock
+	r00 <- receive
+	let x0 = x0' / r00
+	emit x0
+	return ()
+\end{lstlisting}
+
+QR decomposition using the Gram–Schmidt process
+\begin{lstlisting}
+qr :: [[Float]] -> SeqLogic s [Float] [Float] [[Float]]
+qr [v0,v1,v2,v3] = do
+	let y0 = v0
+	u0 <- call $ norm y0
+	clock
+
+	v1_u0 <- call $ v1 `dotp_scale` u0
+	let y1 = v1 .-. v1_u0
+	clock
+	u1 <- call $ norm y1
+	clock
+
+	v2_u0 <- call $ v2 `dotp_scale` u0
+	v2_u1 <- call $ v2 `dotp_scale` u1
+	let sa = v2 .-. v2_u0
+	clock
+	let y2 = sa .-. v2_u1
+	clock
+	u2 <- call $ norm y2
+	
+	v3_u0 <- call $ v3 `dotp_scale` u0
+	v3_u1 <- call $ v3 `dotp_scale` u1
+	v3_u2 <- call $ v3 `dotp_scale` u2
+	let sb = v3 .-. v3_u0
+	clock
+	let sc = sb .-. v3_u1
+	clock
+	let y3 = sc .-. v3_u2
+	clock
+	u3 <- call $ norm y3
+
+	return [u0, u1, u2, u3]
+\end{lstlisting}
+
+\begin{lstlisting}
+sortTree :: [Float] -> (Int, Int)
+sortTree distances = (j,k) where 
+	ids = zip distances [0..] -- annotate with index
+	(part1, part2) = splitAt (div (length distances) 2) ids
+	sortedLayer = zipWith (closestOfTwoPoints) part1 part2 
+	(_,j,_,k) = foldl1 (closestTwoOfFourPoints) sortedLayer
+
+-- sort two points, output is (y, iy, z, iz) where y < z
+closestOfTwoPoints :: (Float,i) -> (Float,i) -> (Float,i, Float,i)
+closestOfTwoPoints (a, ia) (x, ix) 
+	| a < x 	= (a, ia, x, ix)
+	| otherwise = (x, ix, a, ia) 
+
+-- find the two closest distances with index out of four distances, 
+-- this function can be used in a tree structure find the two closest points out a list of points
+-- NOTE: assume input tuples are sorted, so a < b, and x < y
+closestTwoOfFourPoints :: (Float, i, Float, i)  -> (Float, i,  Float, i) -> (Float, i, Float, i)
+closestTwoOfFourPoints (a, ia, b, ib) (x, ix, y, iy) =
+	case (a < x, b < x, a < y) of 
+		(True, True, _) 	-> (a, ia, b, ib)
+		(True, False, _)	-> (a, ia, x, ix)
+		(False, _, True)	-> (x, ix, a, ia)
+		(False, _, False)	-> (x, ix, y, iy)
 \end{lstlisting}
 
 
@@ -627,17 +888,6 @@ dotp_scale vs us = do
    let n = sum zs
    clock
    return (n *. us)
-\end{lstlisting}
-
-
-\begin{lstlisting}
--- matrix multiplication using one dot product at a time
-mat_mul :: [[Double]]->[[Double]]->SeqLogic s i o [[Double]]
-mat_mul m1 m2 = do
-   let m2' = transpose m2
-   call $ seqMap (row_mul m1) m2'
-
-row_mul m1 v = seqMap (dotp v) m1
 
 dotp :: [Double] -> [Double] -> SeqLogic s i o Double
 dotp xs ys = do
@@ -645,15 +895,8 @@ dotp xs ys = do
    clock
    return (sum zs)
 
--- sequentially mapping over a list using an extra cycle for each element
-seqMap :: (a->SeqLogic s i o b)->[a]->SeqLogic s i o [b]
-seqMap f [] = return []
-seqMap f (x:xs) = do
-   y <- f x
-   ys <- call $ seqMap f xs
-   return (y:ys)
-
 n *. xs = map (n*) xs
+n +. xs = map (+n) xs
 (.*.) = zipWith (*)
 (.+.) = zipWith (+)
 (.-.) = zipWith (-)
@@ -706,6 +949,7 @@ extra delay (register) before or after the alu to increase clock frequency
 
 \section{Related approaches}
 
+Feldspar \cite{Feldspar} \\
 Geometry of Synthesis \cite{Ghica}
 
 \subsection{High level synthesis}
@@ -720,6 +964,7 @@ no instruction set processor
 \section{Conclusions}
 
 a processor is a thing that executes programs in many bounded steps \\
+merely defining the boundaries of steps to execute and their ordering is enough to derive processor like hardware structure from it
 
 Instruction set design can be systematic refactoring process \\
 The program and hardware constraints drive the steps to take \\
