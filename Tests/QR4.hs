@@ -28,24 +28,24 @@ linFib :: SeqLogic s () Int ()
 linFib = do
    n <- alloc 0
    m <- alloc 1
-   loop 0 10 $ \ i -> do
-      x <- use n
-      y <- use m
+   loop 0 upto 10 $ \ i -> do
+      x <- peek n
+      y <- peek m
       n <~ y
       m <~ (x + y)
-   r <- use n
+   r <- peek n
    emit r
 
 linFibCo :: () -> SeqLogic s () () Int
 linFibCo x = do
    n <- alloc 0
    m <- alloc 1
-   loop 0 10 $ \ i -> do
-      x <- use n
-      y <- use m
+   loop 0 upto 10 $ \ i -> do
+      x <- peek n
+      y <- peek m
       n <~ y
       m <~ (x + y)
-   r <- use n
+   r <- peek n
    return r
 
 -- implementation of some kind of QR decomposition derived from Hendrik's masters project ICP code

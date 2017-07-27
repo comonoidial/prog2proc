@@ -38,18 +38,18 @@ data SeqAction s i o a where
    Clock   :: SeqAction s i o ()
    Receive :: SeqAction s i o i
    Emit    :: a -> SeqAction s i a ()
-   Alloc   :: a -> SeqAction s i o (Ref s a)
-   AllocArr:: Int -> SeqAction s i o (Ref s [a])
-   Load    :: Ref s a -> SeqAction s i o a
-   Store   :: Ref s a -> a -> SeqAction s i o ()
+   Alloc   :: a -> SeqAction s i o (Reference s a)
+   AllocArr:: Int -> SeqAction s i o (Reference s [a])
+   Load    :: Reference s a -> SeqAction s i o a
+   Store   :: Reference s a -> a -> SeqAction s i o ()
    Start   :: SeqLogic s j p a -> SeqAction s i o (Coproc s j p a)
    Finish  :: Coproc s j p a -> SeqAction s i o a
    Infuse  :: Coproc s j p x -> j -> SeqAction s i o ()
    Extract :: Coproc s j a x -> SeqAction s i o a
 
-data Ref s a = Ref (STRef s a) | ArrRef (STRef s a) | IxRef Int (Ref s [a])
+data Reference s a = Ref (STRef s a) | ArrRef (STRef s a) | IxRef Int (Reference s [a])
 
-indexRef :: Int -> Ref s [a] -> Ref s a
+indexRef :: Int -> Reference s [a] -> Reference s a
 indexRef = IxRef
 
 newtype Coproc s j p a = Coproc (STRef s (CoProStatus, Maybe j, Maybe p, SeqLogic s j p a))
@@ -143,18 +143,18 @@ runCoproCycle (CoproElem (Coproc cp)) = do
         return True
       Finished -> return False
 
-readRef :: Ref s a -> ST s a
+readRef :: Reference s a -> ST s a
 readRef (Ref r) = readSTRef r
 readRef (IxRef i (ArrRef r)) = fmap (!!i) (readSTRef r)
 readRef (IxRef i r) = fmap (!!i) (readRef r)
 readRef (ArrRef _) = error "arrays can only be read per element"
 
-writeRef :: Ref s a -> a -> ST s ()
+writeRef :: Reference s a -> a -> ST s ()
 writeRef (Ref r) x = writeSTRef r x
 writeRef (IxRef i r) x = modifyRef r ((\(xs, _:ys) -> xs ++ x : ys) . splitAt i)
 writeRef (ArrRef _) x = error "arrays can only be written per element"
 
-modifyRef :: Ref s a -> (a -> a) -> ST s ()
+modifyRef :: Reference s a -> (a -> a) -> ST s ()
 modifyRef (Ref r) f = modifySTRef r f
 modifyRef (IxRef i r) f = modifyRef r ((\(xs, x:ys) -> xs ++ f x : ys) . splitAt i)
 modifyRef (ArrRef r) f = modifySTRef r f
