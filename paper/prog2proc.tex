@@ -60,10 +60,14 @@ FPGAs became large enough for many applications.
 % \item How to make processor design a more systematic process?
 \end{itemize}
 
-Functional languages have a long history with hardware design \cite{Sheeran2005}
+Functional languages have a long history with hardware design \cite{Sheeran2005} \\
 
-\subsection{Hardware in Haskell using \clash}
-Designing hardware architectures for FPGA is traditionally done using low-level hardware description languagles (HDLs) like Verilog or VHDL. Functional languages have a long history with hardware design \cite{Sheeran2005}. \clash \cite{Baaij} is a subset of Haskell that can be compiled to widely supported lower level HDLs. Even though you can use most abstractions that Haskell has to offer, \clash is still a structural hardware description language.
+In the first part of this paper we show a systematic transformation process of a functional program into a simple processor using well known techniques and some hardware oriented optimisations.
+Next we apply this concept of application specific processor generation to a practical useful setting.
+An embedded Haskell DSL with explicit clock cycle boundaries is introduced, which gives the hardware designer a lot control over the generated hardware implementation.
+With a tool to generate \clash code from this DSL, we keep the whole hardware design process in Haskell with executable/simulatable code at every stage.
+As a demonstration we use the hardware implemention on an FPGA of the signal processing for a laser range finder.
+
 \subsection{The hardware design process in practice}
 Designing hardware from a mathematical perspective using \clash is described in [TODO] and contains the following steps:
 \begin{enumerate}
@@ -90,6 +94,14 @@ There are several methods to create a feasible design for the given resource con
 The nice aspect of this process is that every step the result can be evaluated/simulated because it is executable Haskell/\clash code. In the time-area trade-off  the impact of every design choice can be evaluated. The downside of this method, especially when iteratively designing a time-area trade-off, is that it comes down to the designers knowledge which technique is necessary to make a feasible design.
 
 Creating glue logic/control to operate the algorithm is error prone and can be complex. This paper presents a method of deducing the control- and data-path from the algorithm, given the algorithms execution order??
+
+\subsection{Hardware in Haskell using \clash}
+\textit{TODO be more concrete about what clash is} \\
+
+Designing hardware architectures for FPGA is traditionally done using low-level hardware description languagles (HDLs) like Verilog or VHDL.
+\clash \cite{Baaij} is a subset of Haskell that can be compiled to widely supported lower level HDLs. Even though you can use most abstractions that Haskell has to offer, \clash is still a structural hardware description language. \\
+
+\textit{TODO mention fixed sized vectors, signals and other clash features used in this paper}
 
 %\subsection{Hardware in Haskell using \clash}
 %\clash \cite{Baaij} is a subset of Haskell that can be compiled to widely supported lower level hardware description languages such as Verilog and VHDL.
@@ -176,7 +188,6 @@ binGCD x y k = if (y == 0)
 here we use the $cont$ function to make continuation application explicit
 
 \subsection{Defunctionalising continuations}
-translating recursive functions \cite{Ingmar} \cite{Zhai} \\
 defunctionalisation \cite{Reynolds} \\
 combined in \cite{CCC}
 
@@ -198,6 +209,8 @@ cont g (CC x y a b k) = cont (min a b) (CD x y a b g k)
 \lstset{basicstyle=\codefamily}
 
 \subsection{State machine with a stack}
+translating recursive functions \cite{Ingmar} \cite{Zhai} \\
+
 combine functions into one by making each a data type, including the continuation application function \\
 using the observation that nested continuations form a stack
 
@@ -245,11 +258,11 @@ step (Cont g)        (CC x y a b   : cs) =
 \label{fig:stack}
 \end{figure}
 Figure \ref{fig:stack} shows the stack machine structure as hardware
-\subsection{Separating the data stack}
 
-lots of data copied from one state/continuation to another \\
+\subsection{Separating the data stack}
+most step have a lot of data copied from one continuation to another \\
 and stack is very wide because some continuations capture a lot of free variables \\
-only a few are used/produced every cycle \\
+only a few variables are used every cycle \\
 note that we have to copy the argument to the dropZeros function because they are used again and/or in the wrong order \\
 for the arguments to the recursive binGCD call we can skip copying as they are in the right order and not used later
 
@@ -556,7 +569,7 @@ we use the inline wrapper (that does nothing) to make explicit that a function i
 conditional expression/statements \\
 external communication
 
-\subsection{Mutable data and explicti memory access}
+\subsection{Mutable data and explicit memory access}
 explicit allocation of writable memory addresses\\
 indexing in larger memory structures \\
 using arrays \\
@@ -805,29 +818,27 @@ qr v u = do
 \end{lstlisting}
 
 \begin{lstlisting}
-sortTree :: [Float] -> (Int, Int)
-sortTree distances = (j,k) where 
-	ids = zip distances [0..] -- annotate with index
-	(part1, part2) = splitAt (div (length distances) 2) ids
-	sortedLayer = zipWith (closestOfTwoPoints) part1 part2 
-	(_,j,_,k) = foldl1 (closestTwoOfFourPoints) sortedLayer
+indexSmallestTwo :: [Float] -> (Int, Int)
+indexSmallestTwo distances = (j,k) where 
+  (part1, part2) = splitAt (div (length distances) 2) ids
+  sortedLayer = zipWith sortTwo part1 part2 
+  (_,j,_,k) = foldl1 combineSmallestPairs sortedLayer
 
 -- sort two points, output is (y, iy, z, iz) where y < z
-closestOfTwoPoints :: (Float,i) -> (Float,i) -> (Float,i, Float,i)
-closestOfTwoPoints (a, ia) (x, ix) 
-	| a < x 	= (a, ia, x, ix)
-	| otherwise = (x, ix, a, ia) 
+sortTwo :: (Float, i) -> (Float, i) -> (Float, i, Float, i)
+sortTwo (a, ia) (x, ix) 
+  | a < x   = (a, ia, x, ix)
+  | otherwise = (x, ix, a, ia) 
 
 -- find the two closest distances with index out of four distances, 
--- this function can be used in a tree structure find the two closest points out a list of points
 -- NOTE: assume input tuples are sorted, so a < b, and x < y
-closestTwoOfFourPoints :: (Float, i, Float, i)  -> (Float, i,  Float, i) -> (Float, i, Float, i)
-closestTwoOfFourPoints (a, ia, b, ib) (x, ix, y, iy) =
-	case (a < x, b < x, a < y) of 
-		(True, True, _) 	-> (a, ia, b, ib)
-		(True, False, _)	-> (a, ia, x, ix)
-		(False, _, True)	-> (x, ix, a, ia)
-		(False, _, False)	-> (x, ix, y, iy)
+combineSmallestPairs :: (Float, i, Float, i)  -> (Float, i,  Float, i) -> (Float, i, Float, i)
+combineSmallestPairs (a, ia, b, ib) (x, ix, y, iy) =
+  case (a < x, b < x, a < y) of 
+    (True, True, _)   -> (a, ia, b, ib)
+    (True, False, _)  -> (a, ia, x, ix)
+    (False, _, True)  -> (x, ix, a, ia)
+    (False, _, False) -> (x, ix, y, iy)
 \end{lstlisting}
 
 
@@ -872,7 +883,10 @@ compare hardware implementation with the generated results from this section
 
 \subsection{Optimizing the ICP implementation}
 software pipelining the nearest 2 points loop \\
-alu output register and computation reordering to use only single memory read port
+alu output register and computation reordering to use only single memory read port \\
+
+\textit{Work in progress}
+
 
 \section{Generating a processor}
 source to source transformation using haskell-src-exts parser\\
@@ -911,12 +925,14 @@ all declarations except for the sequential logic functions are copied
 where do constants come from? \\
 storing data in registers vs. data stack memory \\
 direct control vs. instruction memory \\
-extra delay (register) before or after the alu to increase clock frequency
+extra delay (pipeline register) before or after the alu to increase clock frequency
 
 \section{Related approaches}
 
 Feldspar \cite{Feldspar} \\
 Geometry of Synthesis \cite{Ghica}
+%Cryptol??
+%Copilot??
 
 \subsection{High level synthesis}
 Generates hardware from software written in ordinary programming languages (commonly C(++) or Matlab)\\
@@ -942,12 +958,14 @@ As a side effect derived instruction set are easy to compile for
 implement the transformation process as GHC plugin instead of a fragile source to source compilation \\
 or convince the \clash developers to integrate this in their compiler\\
 
+find suitable higher level abstractions to make the EDSL more functional than the current imperative features \\
+
 Start from language semantics instead of specific programs \\
 Extend for other language features (memory/complex control flow) \\
 Automating parts of the process or better refactoring tools\\
 Work out the process for pipelining and data parallelism? 
 
-
+Would it be possible to extend the work of "Calculating Correct Compilers" \cite{CCC} to derive both a compiler and processor?
 
 \begin{acks}
 The first author conducted this research within the Modern project (647.000.003) supported by NWO.
