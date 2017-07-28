@@ -22,13 +22,15 @@
 
 \def\clash{C$\lambda$aSH\xspace}
 
+\DeclareMathOperator*{\argmin}{\arg\!\min} % argmin operator
+
 \bibliographystyle{abbrvnat}
 
 \begin{document}
 \lstset{language=Haskell, basewidth=1.2ex, basicstyle=\codefamily, identifierstyle=\itshape,
  deletekeywords={String,Maybe,Just,Nothing,map,mapM,split,bracket,when,Bool,Int,div,round,sin,maxBound,fromIntegral,odd,True,False,Eq,negate,Double,Enum,index,fromEnum,not,accum,Functor,min,max,next,lookup,const,transpose,sum,sqrt,zip,zipWith,replicate,undefined,splitAt,length,foldl1,Float,otherwise}} 
 
-\title{Tranforming Programs into Application Specific Processors}
+\title{Transforming Programs into Application Specific Processors}
 \authorinfo{Arjan~Boeijink \and Hendrik Folmer \and Jan~Kuper \and Marco J.G. Bekooij}{University of Twente}{\{w.a.boeijink,h.h.folmer\}@utwente.nl}
 
 \maketitle
@@ -42,71 +44,73 @@ From programs written in an embedded Haskell DSL with explicit clock cycle bound
 
 
 \section{Introduction}
-after getting performance gains first from higher clock frequencies and later from increased parallelism \\
-with the energy cost (either in electricy bill for data center, or battery live for mobile devices) as the main bottleneck in computing \\
-raising clock frequencies is no longer an option and exploiting more parallelism is getting harder with diminishing returns \\
-Specialisation as key to hardware effiency. \\
-FPGAs became large enough for many applications.
+The past decades we received hardware performance gains first from higher clock frequencies and later from increased parallelism.
+The energy costs (from data centers to mobile devices) are now the main bottleneck in computing, thus raising clock frequencies is no longer an option.
+And exploiting more parallelism is getting harder with diminishing returns.
+This leaves specialisation of hardware designs as the key method to gain effiency and performance.
+
+The amount of logic gates avaible on a chip is still increasing, allowing complex algorithm to be directly implemented in hardware.
+However the costs of producing a high performance chips with the leading edge technology has grown to the point where only few companies have the scale to design new ones.
+And GPUs, while offering much parallel computation throughput, are not always suitable because of their energy consumption, and have latencies too big for real time applications.
+
+The availability of large reconfigurable hardware chips, known as field-programmable gate arrays (FPGA), provides the opportunity to apply hardware design to many specialised applications.
+Users of FPGAs range from datacenters requiring energy efficiency and fast response times, to high performance sensor data processing on a flying drone.
+The complexity of algorithms to be mapped onto FPGAs and fast changing requirements of specialised applications, makes the manual hardware design process the bottleneck in time and costs.
+
+As functional programmers we were frustrated by the low level nature of common hardware design tools and languages, and how repetitive most of hardware design process is.
+Thus we are looking for higher level (and functional) abstractions for describing hardware, and to explore and bridge the gap between software and hardware.
+
+%FPGAs became large enough for many applications.
 %FPGAs even available as accelerators for cloud computing.
 
 %From the outside hardware is usually a small black box with number of pins connected to it.
 %The inside a of chip consists of a large numbers of transistors are connected by wires.
 
 % Some questions after reflecting on my own research:
-\begin{itemize}
- \item What is the real difference between software and hardware?
- \item Why seems instruction set design obvious in hindsight?
-% \item What are the important choices in ISA/processor design?
-% \item How to make processor design a more systematic process?
-\end{itemize}
-
-Functional languages have a long history with hardware design \cite{Sheeran2005} \\
+%\begin{itemize}
+% \item What is the real difference between software and hardware?
+% \item Why seems instruction set design obvious in hindsight?
+%% \item What are the important choices in ISA/processor design?
+%% \item How to make processor design a more systematic process?
+%\end{itemize}
 
 In the first part of this paper we show a systematic transformation process of a functional program into a simple processor using well known techniques and some hardware oriented optimisations.
 Next we apply this concept of application specific processor generation to a practical useful setting.
 An embedded Haskell DSL with explicit clock cycle boundaries is introduced, which gives the hardware designer a lot control over the generated hardware implementation.
 With a tool to generate \clash code from this DSL, we keep the whole hardware design process in Haskell with executable/simulatable code at every stage.
-As a demonstration we use the hardware implemention on an FPGA of the signal processing for a laser range finder.
+As a demonstration application we use the hardware implementation on an FPGA of the signal processing for a laser range finder.
 
-\subsection{The hardware design process in practice}
-Designing hardware from a mathematical perspective using \clash is described in [TODO] and contains the following steps:
-\begin{enumerate}
- \item Choose algorithm
-\end{enumerate}
-While choosing an algorithm it is important to keep in mind how well the target hardware could potentially solve the problem. FPGAs are suitable for reusing computational structures and consistent data streams.
-\begin{enumerate}%[resume]
- \item Specify math in executable Haskell
-\end{enumerate}
-text..
-\begin{enumerate}%[resume]
- \item Convert Haskell to \clash
-\end{enumerate}
-Converting the executable Haskell to executable \clash consist mainly of using fixed size vectors in stead of lists, and selecting a numeric precision for data. \clash does not support recursion so either rewrite recursion in higher-order functions or create a mealy machine structure. Once the entire design is specified the \clash -compiler can automatically generate a hardware architecture in VHDL or Verilog which can be synthesized to determine the hardware resource costs.
-\begin{enumerate}%[resume]
- \item Determine resource constrains
-\end{enumerate}
-The synthesized architecture in \clash consumes a certain amount of hardware resources but the target device has a limited amount of resources available. These resource constrains are in terms of memory, memory bandwidth, logical elements, and digital signal processors (DSPs). There are also constrains on latency and throughput.
-\begin{enumerate}%[resume]
- \item ... time-area trade-off
-\end{enumerate}
-There are several methods to create a feasible design for the given resource constrains. One could split the algorithm in steps to reduce data access to limit the memory bandwidth. Finding patterns in the algorithm allows for the reuse of hardware components over time. This limits both memory and computational area on an FPGA. Breaking long latency computation in parts enable faster clock frequencies which influences latency and throughput. Pipelining and multistep computation requires glue logic/control to operate. During the time-area trade-off one can iterate through all the above mentioned methods. 
 
-The nice aspect of this process is that every step the result can be evaluated/simulated because it is executable Haskell/\clash code. In the time-area trade-off  the impact of every design choice can be evaluated. The downside of this method, especially when iteratively designing a time-area trade-off, is that it comes down to the designers knowledge which technique is necessary to make a feasible design.
+\subsection{Background: a Haskell based hardware design process}
+Functional languages have a long history with hardware design \cite{Sheeran2005}.
+A hardware design process in Haskell using \clash is described in \cite{Robin:Hendrik} and contains the following steps:
+The first step is to choose an algorithm to solve the a certain problem.
+While choosing an algorithm it is important to keep in mind how well the target hardware could potentially solve the problem.
+FPGAs are suitable for reusing computational structures and consistent data streams.
+The next step is to specify the algorithm in executable Haskell code. After which the code can be rewritten in executable \clash -code.
+The functionality can be evaluated/simulated in the Haskell/\clash. The \clash compiler can automatically generate a hardware architecture which can be synthesized to determine the hardware resource costs.
+The synthesized architecture consumes a certain amount of hardware resources but the target device has a limited amount of resources available.
+These resource constrains are in terms of memory, memory bandwidth, logical elements, and digital signal processors (DSPs).
+There are also constrains on latency and throughput. There are several methods to create a feasible design for the given resource constrains. One could split the algorithm in steps to reduce data access to limit the memory bandwidth.
+Finding patterns in the algorithm allows for the reuse of hardware components over time.
+This limits both memory and computational area on an FPGA. Breaking long latency computation in parts enable faster clock frequencies which influences latency and throughput.
+Pipelining and multistep computation requires glue logic/control to operate.
+During the time-area trade-off one can iterate through all the above mentioned methods. 
 
-Creating glue logic/control to operate the algorithm is error prone and can be complex. This paper presents a method of deducing the control- and data-path from the algorithm, given the algorithms execution order??
+The nice aspect of this process is that every step the result can be evaluated/simulated because it is executable Haskell/\clash code.
+In the time-area trade-off  the impact of every design choice can be evaluated. The downside of this method, especially when iteratively designing a time-area trade-off, is that it comes down to the designers knowledge which technique is necessary to make a feasible design.
+
+Creating glue logic and control to operate the algorithm is error prone and requires the majority of the effort.
+The automation of this part of the process is the main goal of this paper.
+% This paper presents a method of deducing the control- and data-path from the algorithm, given the algorithms execution order??
 
 \subsection{Hardware in Haskell using \clash}
-\textit{TODO be more concrete about what clash is} \\
-
-Designing hardware architectures for FPGA is traditionally done using low-level hardware description languagles (HDLs) like Verilog or VHDL.
-\clash \cite{Baaij} is a subset of Haskell that can be compiled to widely supported lower level HDLs. Even though you can use most abstractions that Haskell has to offer, \clash is still a structural hardware description language. \\
-
-\textit{TODO mention fixed sized vectors, signals and other clash features used in this paper}
+Designing hardware architectures for FPGA is traditionally done using low-level hardware description languages (HDLs) like Verilog or VHDL which is cumbersome and prone to error. \clash 
+\clash \cite{Baaij} is a subset of Haskell that can be compiled to widely supported lower level HDLs.
+Even though you can use most abstractions that Haskell has to offer, \clash is still a structural hardware description language.
+Being a structural hardware description language \clash does not support dynamic data sizes or recursion, so in order to convert Haskell to \clash one has to use fixed size vectors instead of lists, specify the size of value data, and use higher-order functions or mealy machine structures instead of recursion.
 
 %\subsection{Hardware in Haskell using \clash}
-%\clash \cite{Baaij} is a subset of Haskell that can be compiled to widely supported lower level hardware description languages such as Verilog and VHDL.
-%Even though you can use most abstractions that Haskell has to offer, \clash is still a structural hardware description language.
-%
 %\subsection{The hardware design process in practice}
 %\begin{enumerate}
 % \item Choose algorithm
@@ -127,8 +131,8 @@ Designing hardware architectures for FPGA is traditionally done using low-level 
 %Steps 6 to 9 take the most effort, and step 9 is very error prone and can be very complex.
 
 \section{Rewriting a program into a processor}
-as a running example in this section we use a binary variant of greatest common divisor, that doesn't use any complex arithmetic operation \\
-the use of multiple recursive functions and a data dependent recursion depth makes it non trivial to implement this computation in hardware
+As a running example in this section we use a binary variant of greatest common divisor, that doesn't use any complex arithmetic operation.
+The use of multiple recursive functions and a data dependent recursion depth makes it non trivial to implement this computation in hardware.
 \begin{lstlisting}
 binGCD :: Word32 -> Word32 -> Word32       
 binGCD x 0 = x
@@ -145,7 +149,7 @@ countZeros :: Word32 -> Word32
 countZeros n = if odd n then 0 
   else countZeros (n >>> 1) + 1
 \end{lstlisting}
-the count trailing zeros could been implemented as a primitive operation as a fold over bits
+The count trailing zeros could been implemented as a primitive operation as a fold over bits.
 
 \subsection{Desugaring and flattening the program}
 The first step is splitting up expressions which are too complex to execute within a single clock cycle.
@@ -185,11 +189,14 @@ binGCD x y k = if (y == 0)
                     (\e -> cont (r <<< e) k)
       )))))))
 \end{lstlisting}
-here we use the $cont$ function to make continuation application explicit
+Here we use the $cont$ function to make continuation application explicit. \\
+
+\textit{To add a bit more information for those not familar with CPS}
 
 \subsection{Defunctionalising continuations}
-defunctionalisation \cite{Reynolds} \\
-combined in \cite{CCC}
+Defunctionalisation \cite{Reynolds} is well known technique to transform functions into datatypes. \\
+
+\textit{Explanation to be added here}
 
 \lstset{basicstyle=\codesmall}
 \begin{lstlisting}
@@ -208,11 +215,16 @@ cont g (CC x y a b k) = cont (min a b) (CD x y a b g k)
 \end{lstlisting}
 \lstset{basicstyle=\codefamily}
 
-\subsection{State machine with a stack}
-translating recursive functions \cite{Ingmar} \cite{Zhai} \\
+The steps of continuation passing style and defunctionalisation could be combined into one as shown in 'Calculating Correct Compilers'\cite{CCC}.
 
-combine functions into one by making each a data type, including the continuation application function \\
-using the observation that nested continuations form a stack
+
+\subsection{State machine with a stack}
+Here we apply the tranformation from translating recursive functions to hardware in \cite{Ingmar} and \cite{Zhai}.
+
+Using the observation that nested continuations form a stack, the nested continuation datatype can be flattened context dataype.
+And we can combine functions into one by making each a data type, including the continuation application function. \\
+
+\textit{To be explained, this key step in the process}
 
 \begin{lstlisting}
 data Call = GCD Word32 Word32 | DropZs Word32
@@ -260,11 +272,10 @@ step (Cont g)        (CC x y a b   : cs) =
 Figure \ref{fig:stack} shows the stack machine structure as hardware
 
 \subsection{Separating the data stack}
-most step have a lot of data copied from one continuation to another \\
-and stack is very wide because some continuations capture a lot of free variables \\
-only a few variables are used every cycle \\
-note that we have to copy the argument to the dropZeros function because they are used again and/or in the wrong order \\
-for the arguments to the recursive binGCD call we can skip copying as they are in the right order and not used later
+Most steps have a lot of data copied from one continuation to another, and stack is very wide because some continuations capture many free variables.
+This yield inefficient hardware, especially when only a few variables are used every cycle. \\
+
+\textit{To explain the transformation here}
 
 \begin{lstlisting}
 data State = BinGCD | DropZs | CntZs | Cont
@@ -284,17 +295,16 @@ step Cont (CB:cs)   (b:a:y:x:ds) =
 step Cont (CC:cs) (g:b:a:y:x:ds) = 
   (Cont,  CD:cs, s:g:b:a:y:x:ds) where s = min a b
 \end{lstlisting}
+Note that we have to copy the argument to the dropZeros function because they are used again and/or in the wrong order.
+And for the arguments to the recursive binGCD call we can skip copying as they are in the right order and not used later.
 
-having two stacks might look like a unnecessary complication from the C-like software stack point of view, but is common in hardware designs based on Forth \cite{LaForest}
+Having two stacks might look like a unnecessary complication from the C-like software stack point of view, but is common in hardware designs based on Forth \cite{LaForest}.
 
 \subsection{Optimizing control}
-
-What happens in every step can depend on both the state and top of the continuation stack. \\
-combine state and continuation stack in a control stack by eliminating the Return state. \\
-now only the top of the control stack directly determines what each step does. \\
-the top of the control stack is effectively a program counter \\
-a program counter is merely a numeric encoded label optimized for the common case of continuing at the successive label \\
-the steps with if expressions are more complex than the rest, and can be split up by computing the branch condition in a separate step
+What happens in every step depends on both the state and top of the continuation stack.
+We can combine the control state and continuation stack into a control stack by eliminating the Return state.
+Then only the top of the control stack directly determines what each step does.
+The steps containing if expressions are more complex than the rest, and can be split up by computing the branch condition in a separate step.
 
 \begin{lstlisting}
 data Label = BinGCD | T1 | E1 | CA | CB | CC
@@ -319,13 +329,15 @@ step CC      (g:b:a:y:x:ds) =
   (next   , s:g:b:a:y:x:ds) where s = min a b
 \end{lstlisting}
 
-the resulting dual stack machine looks like something you could derive by looking at the flattened program from tradition imperative language point of view
+Now we can recognise the top of the control stack as a program counter.
+Thus a program counter is merely a numeric encoded label, optimized for the common case of continuing at the successive label.
+
+The resulting dual stack machine looks like something you could derive directly by looking at the flattened program from tradition imperative language point of view.
 
 \subsection{Splitting into components}
-
-to be able to use efficient existing memory components we have to extract the use of the datastack from the step function \\
-this means spliting each step in parts to seperate memory read and write actions \\
-also splitting off the arithmetic operations makes it easier to reuse hardware for similiar (arithmetic) computations
+To be able to use efficient existing memory components we have to extract the use of the datastack from the step function.
+This means splitting each step in parts to separate memory read and write actions.
+Also splitting off the arithmetic operations makes it easier to reuse hardware for similar (arithmetic) computations.
 
 \begin{lstlisting}
 type CtrlFun = Word32 -> Label -> CtrlStack ->
@@ -350,10 +362,9 @@ step CC  = (next       ,peek 2,peek 1, min  ,push)
 [TODO] check if such a description would be synthesizable in \clash{}
 
 \subsection{Control by microcode}
-
-each step now produces a set of functions, however functions can not directly exist in hardware \\
-thus we apply defunctionalisation to each component \\
-the resulting structure is like a processor controlled by horizontal microcode
+Each step is now defined as a set of functions to be executed, however functions can not directly exist in hardware.
+Thus we apply defunctionalisation to each aspect, yielding components controlled by datatypes.
+The resulting structure looks like a processor controlled by horizontal microcode.
 
 \begin{lstlisting}
 data AluOp = Const | Add | Sub | Or | Min | Max |
@@ -417,11 +428,11 @@ ctrl (Call f  ) = call f
 \end{lstlisting}
 
 \subsection{Synthesisable implementation in \clash}
-the main effort of converting into a synthesisable hardware description is replacing the lists for the control and data stack with memory components and stack pointers \\
-both stackpointers and the program counter need to be stored in a register \\
-the $microcode$ and $alu$ code from previous step can be directly reused with any change \\
-all components are then connected together in the toplevel of the processor description \\
-this is straightforward except for having to work with Signal's instead of pure values
+The main effort of converting into a synthesisable hardware description is in replacing the lists for the control and data stack with memory components and stack pointers.
+Both stack pointers and the program counter need to be stored in a register.
+The $microcode$ and $alu$ code from previous step can be directly reused with any change.
+All components are then connected together in the toplevel of the processor description.
+This is straightforward except for having to work with Applicative glue logic for Signal's instead of pure values
 
 \begin{lstlisting}
 proccesor :: Signal () -> Signal (Label, Word32)
@@ -524,7 +535,7 @@ also writing microcode by hand is a lot of work \\
 thus almost all processors define an instruction set that provides a slightly higher way of writing programs \\
 having instructions in a writable memory makes a processor reusable for other applications \\
 from the processor point of view an instruction set is just a compressed form of microcode with a hardware component for decoding (decompressing) \\
-secondly an instruction set gives the oppertunity of improving the next generation of a processor design without having to change all software
+secondly an instruction set gives the opportunity of improving the next generation of a processor design without having to change all software
 
 \begin{lstlisting}
 instrMem :: [(Label, Instr)]
@@ -547,9 +558,7 @@ sim ds (pc:cs) = sim ds' cs' where
   cs' = ctrl f z (pc : cs)
 \end{lstlisting}
 
-heap memory \\
-pipelining \\
-input/ouput 
+\textit{TODO heap memory, pipelining and input/ouput }
 
 \section{A DSL for explicitly clocked programs}
 When designing application specific hardware components we care a lot about performance and/or efficiency, otherwise we could have used some existing processor.
@@ -559,31 +568,39 @@ The decision of how much computation to do in each step is a complex optimisatio
 Thus we leave it up to the hardware designer to explicitly decide how to group computations into clock cycles.
 Also the timing with respect to other components can be important, so the order of execution of each cycle needs to be explicit.
 
+\subsection{The sequential logic monad}
+
+\textit{To be explained}
+
 \subsection{Expressing control flow}
-using functions is essential for code reuse and readability of larger programs, thus multi cycle SeqLogic fragments should be usable as functions \\
-as seen from the transformation process function calls and return form natural boundary between steps \\
-however function calls are invisible for the SeqLogic monad and will not get cycle boundaries in simulation \\
-to match the hardware behaviour with simulation we have to wrap every call to a SeqLogic function \\
-for some smaller function the added cycle boundaries cause too much overhead \\
-we use the inline wrapper (that does nothing) to make explicit that a function is used without any overhead \\
-conditional expression/statements \\
-external communication
+Using functions is essential for code reuse and readability of larger programs, thus multi cycle SeqLogic fragments should be usable as functions.
+As seen from the transformation process function calls and return form a natural boundary between steps.
+However, function calls are invisible for the SeqLogic monad and will not get cycle boundaries in simulation.
+To match the hardware behaviour with simulation we have to wrap every call to a SeqLogic function.
+However for some smaller functions the added cycle boundaries cause too much overhead.
+Thus we use the inline wrapper (that does nothing) to make explicit that a function is used without any overhead. \\
+
+\textit {TODO conditional expression/statements and external communication}
 
 \subsection{Mutable data and explicit memory access}
-explicit allocation of writable memory addresses\\
-indexing in larger memory structures \\
-using arrays \\
-loops
+\begin{itemize}
+  \item explicit allocation of writable memory addresses
+  \item indexing in larger memory structures
+  \item using arrays
+  \item loop constructs
+\end{itemize}
 
 \subsection{Existing components as coprocessors}
-Complex arithmetic operations such as divisions, square root and trigonometric functions are usually implemented as seperate components that take many cycles to execute. \\
-a coprocessor can be described as just function in the same EDSL \\
-the coprocessor executes concurrently after forking it from main program, and you can wait for its finished results by joining it \\
-another reason to use the coprocessor abstraction is making multiple functions execute concurrently, instead of manual interleaving each cycle of those functions
+Complex arithmetic operations such as divisions, square root and trigonometric functions are usually implemented as separate components that take many cycles to execute.
+A coprocessor can be described as just function in the same EDSL.
+The coprocessor executes concurrently after forking it from main program, and you can wait for its finished results by joining it.
+Another reason to use the coprocessor abstraction is making multiple functions execute concurrently, instead of manual interleaving each cycle of those functions. \\
+
+\textit {TODO communication with coprocessor and example}
 
 \subsection{Vectorisation support}
-One of the most important ways to achieve higher performance in specialized hardware is to do a lot things in parallel.
-However the amount of available parallism is often larger than what fits on the limited area of the hardware.
+One of the most important ways to achieve higher performance in specialized hardware is to compute a lot things in parallel.
+However the amount of available parallelism is often larger than what fits on the limited area of the hardware.
 Thus we have split operations on large vectors into segments which are executed over time. \\
 
 \textit{Work in progress}
@@ -592,10 +609,9 @@ Thus we have split operations on large vectors into segments which are executed 
 \subsection{Software pipelining}
 Dependencies between operations can lead to poor utilisation of the available hardware resources.
 If long dependencies chains exist within a loop, the performance might be improved by (partial) overlapping of the execution of multiple loop iterations.
-This technique is known as software pipeling and is commonly used in compilers for VLIW processors. \\
+This technique is known as software pipelining and is commonly used in compilers for VLIW processors. \\
 
 \textit{Work in progress}
-
 
 \subsection{Cycle accurate simulation}
 programs are usually part of a larger system \\
@@ -611,14 +627,12 @@ memory is implemented using the lazy ST monad \\
 for coprocessors a list of active ones is maintained and each one is run at every $clock$ or blocking statement in the main program
 
 
-
 \section{Example application: iterative closest point}
-iterative closest point \cite{ICP} is an algorithm used for position finding using a laser range finder \\
+To demonstrate the idea's presented in this paper we take the Iterative Closest Point (ICP) as an example case.
+ICP\cite{ICP} is an algorithm that minimizes the distance between two point sets. In robotics the algorithm is often used to determine the robot movement based on sensor data.
+In our case the sensor information comes from an laser-range finder (LRF) which measures the time of flight of a laser beam, and via a scan of the environment retrieves geometrical information.
+Fig.~\ref{fig:icp_scans} shows an example of this where robot takes a 2D scan of the environment (\ref{fig:icp_scanA}), moves an unknown distance, and then takes a second scan of the environment (\ref{fig:icp_scanB}), by aligning the two scans the moved distance is calculated. 
 
-To demonstrate the idea's presented in this paper we take the Iterative Closest Point (ICP) as an example case. ICP is an algorithm that minimizes the distance between two point sets. In robotics the algorithm is often used to determine the robot movement based on sensor data.
-In our case the sensor information comes from an laser-range finder (LRF) which measures the time of flight of a laser beam and via a scan of the environment retrieves geometrical information.
-Fig.~\ref{fig:icp_scans} shows an example of this where robot takes a scan of the environment (\ref{fig:icp_scanA}), moves an unknown distance, and then takes a second scan of the environment\ref{fig:icp_scanB}, by aligning the two scans the moved distance is calculated.
-An example of this is shown in Figure~\ref{fig:icp_scans}, a more detailed description is given in \cite{Robin:Hendrik}.
 \begin{figure}[ht]
 	\centering
 	\begin{subfigure}{0.13\textwidth}
@@ -643,6 +657,32 @@ An example of this is shown in Figure~\ref{fig:icp_scans}, a more detailed descr
 	\label{fig:icp_scans}
 \end{figure}
 
+The basic ICP algorithm consist of the three following steps:
+\begin{enumerate}
+\item Construct correspondences between point set $\vec{p}$ and $\vec{q}$
+\item Compute a transformation which minimizes the distances (errors) between the two correspondences
+\item Apply the transformation to the set $\vec{p}$ and iterate until convergence
+\end{enumerate}
+A correspondence is a match between a point from set $\vec{p}$ and its nearest neighbour from set $\vec{q}$. 
+Once the correspondences are found minimizing the error between them is stated in \eqref{eq:least_squares}.
+Where $\mathbf{H}$ is a 2D homogeneous transformation matrix, $p_i$ is point $i$ from point set $\vec{p}$, $m_j$ is the closest point ($j$) from point set $\vec{q}$, $n_i$ is the normal vector to the line between the closest and second closest point in $\vec{q}$.
+All points are in homogeneous coordinates.
+\begin{equation}
+\argmin_{\mathbf{H}} \sum_i ((\mathbf{H}p_i - m_j)n_i)
+\label{eq:least_squares} 
+\end{equation}
+From \eqref{eq:least_squares} a linear system, $\mathbf{A}\vec{x}=\vec{b}$, is constructed and solved using QR-decompostion. The system is decomposed into $\mathbf{Q}$ and $\mathbf{R}$ using the Gramm-Schmidt method which is partially shown in~\eqref{eq:gram_schmidt}, where $\mathbf{A} = [\vec{v}_0,\vec{v}_1,\vec{v}_2,\vec{v}_3]$, and $\mathbf{Q} = [\vec{u}_0,\vec{u}_1,\vec{u}_2,\vec{u}_3]$.
+\begin{equation}
+\label{eq:gram_schmidt}
+\begin{aligned}
+\vec{u}_0 &= \frac{\vec{y}_0}{|\vec{y}_0|} \Rightarrow \vec{y}_0 = \vec{v}_0 \\
+\vec{u}_1 &= \frac{\vec{y}_1}{|\vec{y}_1|} \Rightarrow \vec{y}_1 = \vec{v}_1 - (\vec{v}_1 \bullet \vec{u}_0)\vec{u}_0 \\
+\vec{u}_2 &= \frac{\vec{y}_2}{|\vec{y}_2|} \Rightarrow \vec{y}_2 = \vec{v}_2 - (\vec{v}_2 \bullet \vec{u}_0)\vec{u}_0  - (\vec{v}_2 \bullet \vec{u}_1)\vec{u}_1 \\
+%\vec{u}_3 &= \frac{\vec{y}_3}{|\vec{y}_3|} \Rightarrow \vec{y}_3 = \vec{v}_3 - (\vec{v}_3 \bullet \vec{u}_0)\vec{u}_0  - (\vec{v}_3 \bullet \vec{u}_1)\vec{u}_1 - (\vec{v}_3 \bullet \vec{u}_2)\vec{u}_2 \\
+\end{aligned}
+\end{equation}
+The transformation $\vec{x}$ is retrieved by solving the system $\mathbf{R}\vec{x}=\mathbf{Q}^T \vec{b}$ where $\mathbf{R}$ is a $4 \times 4$ upper triangular matrix, a more detailed description is given in Chapter~5 and 12 of \cite{Robin:Hendrik}.
+
 \subsection{Computing vectors to the closest points}
 
 \lstset{basicstyle=\codesmall}
@@ -665,11 +705,11 @@ icp = do
   vecMy <- alloc (replicate 180 undefined)
 
   loop 0 upto (180-1) $ \i -> do
-    let pointX = vecPx!!i
-    let vecDx = pointX -. vecQx
+    let px = vecPx!!i
+    let vecDx = px -. vecQx
     clock
-    let pointY = vecPy!!i
-    let vecDy = pointY -. vecQy
+    let py = vecPy!!i
+    let vecDy = py -. vecQy
     clock
     let vecDx2 = vecDx .*. vecDx
     clock
@@ -685,7 +725,7 @@ icp = do
     let my0 = vecQy!!j
     let my1 = vecQy!!k
     clock
-    let (nx, ny) = createNormalVector pointX pointY mx0 my0 mx1 my1
+    let (nx,ny)= findNormVec (px,py) (mx0,my0) (mx1,my1)
     clock
     vecMx?i <~ mx0
     clock
@@ -775,7 +815,7 @@ icp = do
   emit (vecPy')
 \end{lstlisting}
 
-solving the linear equations of an upper triangular matrix
+Solving the linear equations of an upper triangular matrix
 \begin{lstlisting}
 linearSolver :: SeqLogic s Float Float ()
 linearSolver = do
@@ -798,9 +838,10 @@ linearSolver = do
   return ()
 \end{lstlisting}
 
-QR decomposition using the Gram–Schmidt process
+QR decomposition using the Gram–Schmidt process:
 \begin{lstlisting}
-qr :: Ref s [[Float]] -> Ref s [[Float]] -> SeqLogic s [Float] [Float] ()
+qr :: Ref s [[Float]] -> Ref s [[Float]] ->
+   SeqLogic s [Float] [Float] ()
 qr v u = do
   loop 0 upto 3 $ \j -> do
      v_j <- peek (v?j)
@@ -819,20 +860,22 @@ qr v u = do
 
 \begin{lstlisting}
 indexSmallestTwo :: [Float] -> (Int, Int)
-indexSmallestTwo distances = (j,k) where 
-  (part1, part2) = splitAt (div (length distances) 2) ids
-  sortedLayer = zipWith sortTwo part1 part2 
+indexSmallestTwo distances = (j,k) where
+  ids = zip distances [0..]
+  (xs, ys) = splitAt (div (length distances) 2) ids
+  sortedLayer = zipWith sortTwo xs ys 
   (_,j,_,k) = foldl1 combineSmallestPairs sortedLayer
 
--- sort two points, output is (y, iy, z, iz) where y < z
-sortTwo :: (Float, i) -> (Float, i) -> (Float, i, Float, i)
+--sort two points, output is (y, iy, z, iz) where y < z
+sortTwo :: (Float,i) -> (Float,i) -> (Float,i, Float,i)
 sortTwo (a, ia) (x, ix) 
   | a < x   = (a, ia, x, ix)
   | otherwise = (x, ix, a, ia) 
 
--- find the two closest distances with index out of four distances, 
--- NOTE: assume input tuples are sorted, so a < b, and x < y
-combineSmallestPairs :: (Float, i, Float, i)  -> (Float, i,  Float, i) -> (Float, i, Float, i)
+--find the two closest distances out of two pairs 
+--NOTE: assume input tuples are sorted (a < b && x < y)
+combineSmallestPairs :: (Float, i, Float, i) ->
+   (Float, i,  Float, i) -> (Float, i, Float, i)
 combineSmallestPairs (a, ia, b, ib) (x, ix, y, iy) =
   case (a < x, b < x, a < y) of 
     (True, True, _)   -> (a, ia, b, ib)
@@ -841,7 +884,7 @@ combineSmallestPairs (a, ia, b, ib) (x, ix, y, iy) =
     (False, _, False) -> (x, ix, y, iy)
 \end{lstlisting}
 
-
+Some multi cycle helper functions working with vectors; normalisation, dot product and vector projection:
 \begin{lstlisting}
 normalize :: [Float] -> SeqLogic s i o [Float]
 normalize xs = do
@@ -866,7 +909,10 @@ project vs us = do
    let n = sum zs
    clock
    return (n *. us)
+\end{lstlisting}
 
+For convenience we define operators for scalar-vector and vector-vector operations:
+\begin{lstlisting}
 n *. xs = map (n*) xs
 n +. xs = map (n+) xs
 n -. xs = map (n-) xs
@@ -878,94 +924,138 @@ n -. xs = map (n-) xs
 \lstset{basicstyle=\codefamily}
 
 \subsection{Comparison with manual designed hardware}
-some remarks about the differences between the implementations and effort from hardware designer \\
-compare hardware implementation with the generated results from this section
+\begin{itemize}
+  \item some remarks about the differences between the implementations and effort from hardware designer
+  \item compare hardware implementation with the generated results from this section
+\end{itemize}  
+
+\textit{Work in progress}
 
 \subsection{Optimizing the ICP implementation}
-software pipelining the nearest 2 points loop \\
-alu output register and computation reordering to use only single memory read port \\
+\begin{itemize}
+  \item Apply software pipelining to speed up the finding of nearest two points loop.
+  \item Use an ALU output register and computation reordering to limit the data memory usage to a single read port.
+\end{itemize}  
 
 \textit{Work in progress}
 
 
 \section{Generating a processor}
-source to source transformation using haskell-src-exts parser\\
-input sequential logic edsl, output clash subset of haskell
+\begin{itemize}
+  \item source to source transformation using Haskell-src-exts parser
+  \item input sequential logic edsl, output clash subset of haskell
+\end{itemize}
+
+\textit{To be extended}
 
 \subsection{Resource requirement analysis}
+The first step is to find for each cycle which variables are used and which are defined and used in another cycle.
+This determines the amount of read and write ports required on the data memory, and how many inputs and outputs the ALU structure needs.
+We need to take the type of variables in account, as variables of different size may need to be stored in different memories. \\
 
-first step is to find for each cycle which variables are used and which are defined and used in another cycle \\
-this determines the amount of read and write ports required on the data memory, and how many inputs and outputs the ALU structure needs \\
-we need to take the type of variables in account, as variables of different size may need to be stored in different memories
+\textit{To be extended}
 
 \subsection{Dealing with control flow}
-side effect free if expressions within a cycle just become part of an alu instruction \\
-problems with delays in the control path \\
-control unit keep track of loop counters to support zero overhead loop constructs
+\begin{itemize}
+  \item side effect free if expressions within a cycle just become part of an alu instruction \\
+  \item problems with delays in the control path
+  \item control unit keeps track of loop counters to support zero overhead loop constructs
+\end{itemize}
+
+\textit{To be extended}
 
 \subsection{Memory structure and addressing}
 
-how to emulate multiport memories with blockram \\
-local variables are addressed relative to the stack pointer \\
-explicit allocated memory is addressed absolutely, thus not allowed in recursion functions \\
-every read and write port gets its own address generation unit (AGU) with access to the loop counters \\
-if a part of a memory element is written in a program then the memory is split in parts with a writemask to control them
+\begin{itemize}
+  \item how to emulate multiport memories with blockram
+  \item local variables are addressed relative to the stack pointer
+  \item explicit allocated memory is addressed absolutely, thus not allowed in recursion functions
+  \item every read and write port gets its own address generation unit (AGU) with access to the loop counters
+  \item if a part of a memory element is written in a program then the memory is split in parts with a writemask to control them
+\end{itemize}
 
+\textit{To be extended}
 
 \subsection{Optimise timing and reuse}
-memory with read delay to better match with hardware \\
-alu output registers with bypass for higher clocks? \\
-common subexpression detection on alu expressions
+\begin{itemize}
+  \item memory with read delay to better match with hardware
+  \item ALU output registers with bypass for higher clocks?
+  \item common subexpression detection on alu expressions
+\end{itemize}
 
 \subsection{Generating \clash code}
-each (co)processor in its own file \\
-all declarations except for the sequential logic functions are copied
+\begin{itemize}
+  \item each (co)processor in its own file
+  \item all declarations except for the sequential logic functions are copied
+\end{itemize}
+
+\textit{To be extended}
+
 
 \subsection{Hardware tradeoffs}
-where do constants come from? \\
-storing data in registers vs. data stack memory \\
-direct control vs. instruction memory \\
-extra delay (pipeline register) before or after the alu to increase clock frequency
+The design of processors and mapping of algoritm involves many tradeoffs beyond deciding what happens in which cycle:
+\begin{itemize}
+  \item storing data in registers vs. data stack memory
+  \item direct control versus using an instruction memory
+  \item where do constants come from?
+  \item extra delay (pipeline register) before or after the ALU to increase clock frequency
+\end{itemize}
+We would like to provide some options in our compiler to control those choices in the generated hardware. \\
+
+\textit{Work in progress}
+
 
 \section{Related approaches}
 
-Feldspar \cite{Feldspar} \\
-Geometry of Synthesis \cite{Ghica}
+Using Haskell EDSLs to generate efficient low level code is common approach to gain both abstraction and performance, Feldspar \cite{Feldspar} (used for generating C code for digital signal processing) is a nice example of this.
+Going from functional program descriptions to physical hardware realisation using Geometry of Synthesis \cite{Ghica} is different in many aspects, although it has similar goals. \\
 %Cryptol??
 %Copilot??
 
+\textit{To be extended}
+
 \subsection{High level synthesis}
-Generates hardware from software written in ordinary programming languages (commonly C(++) or Matlab)\\
-usually includes scheduling of operations \\
-could describe our process as medium level synthesis
+Generates hardware from software written in ordinary programming languages (commonly C(++) or Matlab).
+We could describe our process as medium level synthesis, because with explicit clock cycle boundaries we do not have to select and schedule operations.
+While most high level synthesis approaches start from a behavioural description of an algorithm and have to deal with multiple hard optimisation problems. \\
+
+\textit{To be extended}
 
 \subsection{Customisable processors}
-Starting with a template of a processor to which specialised ALUs and/or coprocessors to acceralate specific algorithms \\
-no instruction set processor 
+Starting with a template of a processor to which specialised ALUs and/or coprocessors to accelerate specific algorithms. \\
+% No instruction set processor
+
+\textit{To be extended}
+
 
 \section{Conclusions}
 
 A processor is a thing that executes programs in many bounded steps.
-Merely defining the boundaries of steps to execute and their ordering is enough to derive processor like hardware structure from it.
+Merely defining the boundaries of steps to execute and their ordering is enough to derive processor like hardware structure from it. \\
 
-Instruction set design can be systematic refactoring process \\
-The program and hardware constraints drive the steps to take \\
-Besides minor optimizations only a few design choices to make \\
-As a side effect derived instruction set are easy to compile for
+\textit{To be extended}
+
+%Instruction set design can be systematic refactoring process \\
+%The program and hardware constraints drive the steps to take \\
+%Besides minor optimizations only a few design choices to make \\
+%As a side effect derived instruction set are easy to compile for
 
 
 \subsection{Future work}
-implement the transformation process as GHC plugin instead of a fragile source to source compilation \\
-or convince the \clash developers to integrate this in their compiler\\
+Implement the transformation process as GHC plugin instead of a fragile source to source compilation.
+Or even better convince the \clash developers to integrate this transformation process in their compiler, as that gives access to more information about the hardware to be generated.
 
-find suitable higher level abstractions to make the EDSL more functional than the current imperative features \\
+Find suitable higher level abstractions to make the EDSL more functional than the current imperative features.
 
-Start from language semantics instead of specific programs \\
-Extend for other language features (memory/complex control flow) \\
-Automating parts of the process or better refactoring tools\\
-Work out the process for pipelining and data parallelism? 
+Would it be possible to extend the work of 'Calculating Correct Compilers' \cite{CCC} to derive both a compiler and processor? \\
 
-Would it be possible to extend the work of "Calculating Correct Compilers" \cite{CCC} to derive both a compiler and processor?
+\textit{More to be added}
+
+% Start from language semantics instead of specific programs \\
+% Extend for other language features (memory/complex control flow) \\
+% Automating parts of the process or better refactoring tools\\
+% Work out the process for pipelining and data parallelism? 
+
 
 \begin{acks}
 The first author conducted this research within the Modern project (647.000.003) supported by NWO.
