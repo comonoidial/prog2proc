@@ -38,6 +38,7 @@ getBinders x = error ("getBinders " ++ show x)
 
 getRef (Var _ (UnQual _ (Ident _ r))) = MemRef r
 getRef (InfixApp _ (Var _ (UnQual _ (Ident _ r))) (QVarOp _ (UnQual _ (Symbol _ "?"))) i) = IxRef r i
+getRef (Paren _ r) = getRef r
 getRef x = error ("getRef " ++ show x)
 
 data Cycle a l = Cycle a Source [Action l] (Target l) deriving Show
@@ -53,6 +54,7 @@ data Source
 data Target l
    = Call String [Exp l]
    | Jump String [Exp l] -- tail call
+   | Inline String [Exp l]
    | Return [Exp l]
    | Next
    | LoopEnter Integer   -- with counter start value
@@ -64,10 +66,13 @@ data Action l
    | Receive String
    | Emit (Exp l)
    | Alloc String (Exp l)
+   | AllocArr String Integer
    | Load String (Ref l)
    | Store (Ref l) (Exp l)
    | Start String String [Exp l]
    | Finish [String] String
+   | Infuse String (Exp l)
+   | Extract String String
    deriving Show
 
 data Ref l = MemRef String | IxRef String (Exp l) deriving Show
@@ -77,23 +82,37 @@ splitSeq s = splitS [] where
    splitS xs [] = [Cycle () s (reverse xs) (Return [])]
    splitS xs (Qualifier _ (Var _ (UnQual _ (Ident _ "clock"))) : ys) = Cycle () s (reverse xs) Next : splitSeq Step ys
    splitS xs (Qualifier _ (InfixApp _ r (QVarOp _ (UnQual _ (Symbol _ "<~"))) e) : ys) = splitS (Store (getRef r) e : xs) ys
-   splitS xs (Qualifier q (InfixApp _ (App _ (App _ (Var v (UnQual u (Ident l "loop"))) (Lit _ (Int _ n _))) lm) (QVarOp _ (UnQual _ (Symbol _ "$"))) (Lambda _ [PVar _ (Ident _ i)] (Do _ bs))) : ys)
+   splitS xs (Qualifier _ (InfixApp _ (InfixApp w r (QVarOp _ (UnQual _ (Symbol _  "<~"))) a) op b) : ys) = splitS (Store (getRef r) (InfixApp w a op b) : xs) ys
+   splitS xs (Qualifier q (InfixApp _ (App _ (App _ (App _ (Var v (UnQual u (Ident l "loop"))) (Lit _ (Int _ n _))) (Var _ (UnQual _ (Ident _ dir)))) lm) (QVarOp _ (UnQual _ (Symbol _ "$"))) (Lambda _ [PVar _ (Ident _ i)] (Do _ bs))) : ys)
       = Cycle () s (reverse xs) (LoopEnter n) : splitSeq (LoopBegin i) (bs ++ loopEnd) ++ splitSeq LoopExit ys
          where loopEnd = [Qualifier q (App v (Var v (UnQual u (Ident l "LoopEnd"))) lm)]
+   splitS xs (Qualifier _ (InfixApp _ (Var _ (UnQual _ (Ident _ "call"))) (QVarOp _ (UnQual _ (Symbol _ "$"))) c) : ys) 
+      | (Var _ (UnQual _ (Ident _ f)) : as) <- flattenApps c = Cycle () s (reverse xs) (Call f $ concatMap flattenArg as) : splitSeq (Results []) ys
+   splitS xs (Qualifier _ (InfixApp _ (Var _ (UnQual _ (Ident _ "inline"))) (QVarOp _ (UnQual _ (Symbol _ "$"))) c) : ys) 
+      | (Var _ (UnQual _ (Ident _ f)) : as) <- flattenApps c = Cycle () s (reverse xs) (Inline f $ concatMap flattenArg as) : splitSeq (Results []) ys
+   splitS xs (Qualifier _ (App _ (App _ (Var _ (UnQual _ (Ident _ "infuse"))) (Var _ (UnQual _ (Ident _ c)))) e) : ys) = splitS (Infuse c e : xs) ys
+   splitS xs (Qualifier _ (App _ (Var _ (UnQual _ (Ident _ "finish"))) (Var _ (UnQual _ (Ident _ c)))) : ys) = splitS (Finish [] c : xs) ys
    splitS xs (Generator _ r (InfixApp _ (Var _ (UnQual _ (Ident _ "call"))) (QVarOp _ (UnQual _ (Symbol _ "$"))) c) : ys)
       | (Var _ (UnQual _ (Ident _ f)) : as) <- flattenApps c = Cycle () s (reverse xs) (Call f $ concatMap flattenArg as) : splitSeq (Results (getBinders r)) ys
+   splitS xs (Generator _ r (InfixApp _ (Var _ (UnQual _ (Ident _ "inline"))) (QVarOp _ (UnQual _ (Symbol _ "$"))) c) : ys)
+      | (Var _ (UnQual _ (Ident _ f)) : as) <- flattenApps c = Cycle () s (reverse xs) (Inline f $ concatMap flattenArg as) : splitSeq (Results (getBinders r)) ys
    splitS xs (Generator _ r (Var _ (UnQual _ (Ident _ "receive"))) : ys) = splitS (Receive (getBinder r) : xs) ys
    splitS xs (Generator _ r (App _ (Var _ (UnQual _ (Ident _ "alloc"))) i) : ys) = splitS (Alloc (getBinder r) i : xs) ys
-   splitS xs (Generator _ x (App _ (Var _ (UnQual _ (Ident _ "use"))) r) : ys) = splitS (Load (getBinder x) (getRef r) : xs) ys
+   splitS xs (Generator _ r (App _ (Var _ (UnQual _ (Ident _ "allocArr"))) (Lit _ (Int _ n _))) : ys) = splitS (AllocArr (getBinder r) n : xs) ys
+   splitS xs (Generator _ x (App _ (Var _ (UnQual _ (Ident _ "peek"))) r) : ys) = splitS (Load (getBinder x) (getRef r) : xs) ys
    splitS xs (Generator _ x (App _ (Var _ (UnQual _ (Ident _ "finish"))) (Var _ (UnQual _ (Ident _ r)))) : ys) = splitS (Finish (getBinders x) r : xs) ys
+   splitS xs (Generator _ x (App _ (Var _ (UnQual _ (Ident _ "start"))) (Var _ (UnQual _ (Ident _ c)))) : ys) = splitS (Start (getBinder x) c [] : xs) ys
    splitS xs (Generator _ x (InfixApp _ (Var _ (UnQual _ (Ident _ "start"))) (QVarOp _ (UnQual _ (Symbol _ "$"))) s) : ys) 
       | (Var _ (UnQual _ (Ident _ c)) : as) <- flattenApps s = splitS (Start (getBinder x) c (concatMap flattenArg as) : xs) ys
+   splitS xs (Generator _ x (App _ (Var _ (UnQual _ (Ident _ "extract"))) (Var _ (UnQual _ (Ident _ c)))) : ys) = splitS (Extract (getBinder x) c : xs) ys
    splitS xs (LetStmt _ (BDecls _ [PatBind _ r (UnGuardedRhs _ e) _]) : ys) = splitS (Logic (getBinders r) e : xs) ys
    splitS xs (Qualifier _ (App _ (Var _ (UnQual _ (Ident _ "emit"))) e) : ys) = splitS (Emit e : xs) ys
    splitS xs [Qualifier _ (App _ (Var _ (UnQual _ (Ident _ "return"))) e)] = [Cycle () s (reverse xs) (Return $ flattenArg e)]
    splitS xs [Qualifier _ (App _ (Var _ (UnQual _ (Ident _ "LoopEnd"))) m)] = [Cycle () s (reverse xs) (LoopEnd m)]
    splitS xs [Qualifier _ (InfixApp _ (Var _ (UnQual _ (Ident _ "call"))) (QVarOp _ (UnQual _ (Symbol _ "$"))) c)] 
       | (Var _ (UnQual _ (Ident _ f)) : as) <- flattenApps c = [Cycle () s (reverse xs) (Jump f $ concatMap flattenArg as)]
+   splitS xs [Qualifier _ (InfixApp _ (Var _ (UnQual _ (Ident _ "inline"))) (QVarOp _ (UnQual _ (Symbol _ "$"))) c)] 
+      | (Var _ (UnQual _ (Ident _ f)) : as) <- flattenApps c = [Cycle () s (reverse xs) (Inline f $ concatMap flattenArg as)]
    splitS xs (y : ys) = error (show y) -- splitS xs ys
 
 flattenApps (App _ f x) = flattenApps f ++ [x]
