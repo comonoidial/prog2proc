@@ -27,7 +27,7 @@ countZeros :: Word32 -> Word32
 countZeros n = if odd n then 0 else countZeros (n >>> 1) + 1
 
 {-  -- *** Desugaring and flatten of expressions
-binGCD :: Word32 -> Word32 -> Word32       
+binGCD :: Word32 -> Word32 -> Word32
 binGCD x y = 
   if (y == 0) then x
   else

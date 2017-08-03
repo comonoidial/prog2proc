@@ -1,6 +1,7 @@
 module Tests.Run where
 
 import Prog2Proc.SeqLogic
+import Tests.SeqGCD (runGCD)
 import Tests.QR4 (qr, linFib)
 import Tests.ICP (icp)
 
@@ -10,6 +11,8 @@ testFac = simulate (interpretSeqLogic $ forever factorial)
 -}
 
 testFib = simulateSeq linFib (replicate 13 Nothing)
+
+testGCD = simulateSeq runGCD ([Just 255, Just 90] ++ replicate 92 Nothing)
 
 testQR = simulateSeq qr ([Just test_a0, Just test_a1, Just test_a2, Just test_a3] ++ replicate 81 Nothing)
 
