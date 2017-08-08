@@ -65,8 +65,8 @@ start = command . Start
 finish :: Coproc s j p a -> SeqLogic s i o a
 finish = command . Finish
 
-infuse :: Coproc s j p x -> j -> SeqLogic s i o ()
-infuse c x = command (Infuse c x)
+inject :: Coproc s j p x -> j -> SeqLogic s i o ()
+inject c x = command (Infuse c x)
 
 extract :: Coproc s j a x -> SeqLogic s i o a
 extract = command . Extract

@@ -63,7 +63,7 @@ data Target l
 
 data Action l
    = Logic [String] (Exp l)
-   | Receive String
+   | Receive [String]
    | Emit (Exp l)
    | Alloc String (Exp l)
    | AllocArr String Integer
@@ -71,8 +71,8 @@ data Action l
    | Store (Ref l) (Exp l)
    | Start String String [Exp l]
    | Finish [String] String
-   | Infuse String (Exp l)
-   | Extract String String
+   | Inject String (Exp l)
+   | Extract [String] String
    deriving Show
 
 data Ref l = MemRef String | IxRef String (Exp l) deriving Show
@@ -90,13 +90,13 @@ splitSeq s = splitS [] where
       | (Var _ (UnQual _ (Ident _ f)) : as) <- flattenApps c = Cycle () s (reverse xs) (Call f $ concatMap flattenArg as) : splitSeq (Results []) ys
    splitS xs (Qualifier _ (InfixApp _ (Var _ (UnQual _ (Ident _ "inline"))) (QVarOp _ (UnQual _ (Symbol _ "$"))) c) : ys) 
       | (Var _ (UnQual _ (Ident _ f)) : as) <- flattenApps c = Cycle () s (reverse xs) (Inline f $ concatMap flattenArg as) : splitSeq (Results []) ys
-   splitS xs (Qualifier _ (App _ (App _ (Var _ (UnQual _ (Ident _ "infuse"))) (Var _ (UnQual _ (Ident _ c)))) e) : ys) = splitS (Infuse c e : xs) ys
+   splitS xs (Qualifier _ (App _ (App _ (Var _ (UnQual _ (Ident _ "inject"))) (Var _ (UnQual _ (Ident _ c)))) e) : ys) = splitS (Inject c e : xs) ys
    splitS xs (Qualifier _ (App _ (Var _ (UnQual _ (Ident _ "finish"))) (Var _ (UnQual _ (Ident _ c)))) : ys) = splitS (Finish [] c : xs) ys
    splitS xs (Generator _ r (InfixApp _ (Var _ (UnQual _ (Ident _ "call"))) (QVarOp _ (UnQual _ (Symbol _ "$"))) c) : ys)
       | (Var _ (UnQual _ (Ident _ f)) : as) <- flattenApps c = Cycle () s (reverse xs) (Call f $ concatMap flattenArg as) : splitSeq (Results (getBinders r)) ys
    splitS xs (Generator _ r (InfixApp _ (Var _ (UnQual _ (Ident _ "inline"))) (QVarOp _ (UnQual _ (Symbol _ "$"))) c) : ys)
       | (Var _ (UnQual _ (Ident _ f)) : as) <- flattenApps c = Cycle () s (reverse xs) (Inline f $ concatMap flattenArg as) : splitSeq (Results (getBinders r)) ys
-   splitS xs (Generator _ r (Var _ (UnQual _ (Ident _ "receive"))) : ys) = splitS (Receive (getBinder r) : xs) ys
+   splitS xs (Generator _ r (Var _ (UnQual _ (Ident _ "receive"))) : ys) = splitS (Receive (getBinders r) : xs) ys
    splitS xs (Generator _ r (App _ (Var _ (UnQual _ (Ident _ "alloc"))) i) : ys) = splitS (Alloc (getBinder r) i : xs) ys
    splitS xs (Generator _ r (App _ (Var _ (UnQual _ (Ident _ "allocArr"))) (Lit _ (Int _ n _))) : ys) = splitS (AllocArr (getBinder r) n : xs) ys
    splitS xs (Generator _ x (App _ (Var _ (UnQual _ (Ident _ "peek"))) r) : ys) = splitS (Load (getBinder x) (getRef r) : xs) ys
@@ -104,7 +104,7 @@ splitSeq s = splitS [] where
    splitS xs (Generator _ x (App _ (Var _ (UnQual _ (Ident _ "start"))) (Var _ (UnQual _ (Ident _ c)))) : ys) = splitS (Start (getBinder x) c [] : xs) ys
    splitS xs (Generator _ x (InfixApp _ (Var _ (UnQual _ (Ident _ "start"))) (QVarOp _ (UnQual _ (Symbol _ "$"))) s) : ys) 
       | (Var _ (UnQual _ (Ident _ c)) : as) <- flattenApps s = splitS (Start (getBinder x) c (concatMap flattenArg as) : xs) ys
-   splitS xs (Generator _ x (App _ (Var _ (UnQual _ (Ident _ "extract"))) (Var _ (UnQual _ (Ident _ c)))) : ys) = splitS (Extract (getBinder x) c : xs) ys
+   splitS xs (Generator _ x (App _ (Var _ (UnQual _ (Ident _ "extract"))) (Var _ (UnQual _ (Ident _ c)))) : ys) = splitS (Extract (getBinders x) c : xs) ys
    splitS xs (LetStmt _ (BDecls _ [PatBind _ r (UnGuardedRhs _ e) _]) : ys) = splitS (Logic (getBinders r) e : xs) ys
    splitS xs (Qualifier _ (App _ (Var _ (UnQual _ (Ident _ "emit"))) e) : ys) = splitS (Emit e : xs) ys
    splitS xs [Qualifier _ (App _ (Var _ (UnQual _ (Ident _ "return"))) e)] = [Cycle () s (reverse xs) (Return $ flattenArg e)]
@@ -128,7 +128,7 @@ type VarDefs = [String]
 withVarDefs :: Cycle a l -> Cycle VarDefs l
 withVarDefs (Cycle _ s xs t) = Cycle (concatMap vdefs xs) s xs t where
    vdefs (Logic xs _)  = xs
-   vdefs (Receive x)   = [x]
+   vdefs (Receive xs)  = xs
    vdefs (Load x _ )   = [x]
    vdefs (Finish xs _) = xs
    vdefs _             = []

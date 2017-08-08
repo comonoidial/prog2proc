@@ -36,21 +36,24 @@ icp = do
     let vecSquaredDist = vecDx2 .+. vecDy2
     clock
     let (j,k) = indexSmallestTwo vecSquaredDist
+    normLV <- start normLineVec
     clock
-    let mx0 = vecQx!!j
-    let mx1 = vecQx!!k
+    let px  = vecPx!!i
+    let mxA = vecQx!!j
+    let mxB = vecQx!!k
+    inject normLV (px, mxA, mxB)
+    vecMx?i <~ mxA
     clock
-    let my0 = vecQy!!j
-    let my1 = vecQy!!k
+    let py  = vecPy!!i
+    let myA = vecQy!!j
+    let myB = vecQy!!k
+    inject normLV (py, myA, myB)
+    vecMy?i <~ myA
     clock
-    let (nx, ny) = createNormalVector pointX pointY mx0 my0 mx1 my1
-    clock
-    vecMx?i <~ mx0
-    clock
-    vecMy?i <~ my0
-    clock
+    nx <- extract normLV
     vecNx?i <~ nx
     clock
+    ny <- finish normLV
     vecNy?i <~ ny
 
   v <- allocArr 4
@@ -88,11 +91,11 @@ icp = do
   loop 3 downto 0 $ \j -> do
      u_j <- peek (u?j)
      t_j <- inline $ u_j `dotProd` b
-     infuse linSolv t_j
+     inject linSolv t_j
      loop 3 downto j $ \k -> do
         v_k <- peek (v?k)
         r_jk <- inline $ u_j `dotProd` v_k
-        infuse linSolv r_jk
+        inject linSolv r_jk
      x_j <- extract linSolv
      x?j <~ x_j
   finish linSolv
@@ -162,22 +165,29 @@ qr v u = do
      u?j <~ u_j
   return ()
 
-createNormalVector ::  Float -> Float -> Float -> Float -> Float -> Float -> (Float,Float)
-createNormalVector px py mx0 my0 mx1 my1 = (nx, ny) where
-  (lx, ly, rx, ry)   | mx0 < mx1  = (mx0, my0, mx1, my1)  -- important the the points are sorted
-            | otherwise  = (mx1, my1, mx0, my0)
-  check = ((rx - lx) * ( py - ly )) - ((ry - ly) * (px - lx)) -- check if point lies above or below the line through m0 and m1
-  dx = lx - rx
-  dy = ly - ry
-
-  iSqrt = invSqrt $ dx*dx + dy*dy
-  nx' = iSqrt * dx
-  ny' = iSqrt * dy
-
-  (nx, ny)  | check == 0  = (0,0)             -- on line
-        | check > 0    = (negate ny',        nx')  -- above line
-        | otherwise   = (       ny', negate nx')  -- below line
-
+normLineVec :: SeqLogic s (Float, Float, Float) Float Float
+normLineVec = do
+  (px, mxA, mxB) <- receive
+  let dx = mxB - mxA
+  let sdx = dx*dx
+  let pxmA = px - mxA
+  clock
+  (py, myA, myB) <- receive
+  let dy = myB - myA
+  let sdy = dy*dy
+  let pymA = py - myA
+  clock
+  let check = (dx * pymA) - (dy * pxmA) -- check if point lies above or below the line through m0 and m1
+  let iSqrt = invSqrt $ sdx + sdy
+  clock
+  let nx' = iSqrt * dx
+  let ny' = iSqrt * dy
+  let (nx, ny) = if (check == 0) then (0,0) else
+       if (check > 0) == (dx > 0)
+         then (negate ny',        nx')
+         else (       ny', negate nx')
+  emit nx
+  return ny
 
 indexSmallestTwo :: [Float] -> (Int, Int)
 indexSmallestTwo distances = (j,k) where 
