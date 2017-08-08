@@ -8,7 +8,7 @@ import Data.Maybe
 import Data.Either
 import Data.List
 
-test fn = do 
+test fn = do
    ParseOk pm <- parseFile ("." ++ pathSeparator : "Tests" ++ pathSeparator : fn ++ ".hs")
    let Module _ (Just (ModuleHead _ (ModuleName _ m) _ _)) ps is ds = fmap (const ()) pm
    let mh'= Just (ModuleHead () (ModuleName () (m++"_Proc")) Nothing Nothing)
@@ -21,6 +21,11 @@ test fn = do
 
 test2 = do 
    ParseOk m <- parseFile ("." ++ pathSeparator : "Tests" ++ pathSeparator : "BinGCD.hs")
+   let Module _ _ _ _ ds = fmap (const ()) m
+   mapM_ (putStrLn . show) ds
+
+test3 = do 
+   ParseOk m <- parseFile ("." ++ pathSeparator : "Clash" ++ pathSeparator : "StackMachine.hs")
    let Module _ _ _ _ ds = fmap (const ()) m
    mapM_ (putStrLn . show) ds
 
@@ -177,7 +182,7 @@ groupArgs xs = take 2 (map Just (filter ((< 'p') . head) xs) ++ repeat Nothing) 
 groupRes xs = take 1 ((filter ((< 'p') . head) xs) ++ repeat "undefined") ++ take 1 ((filter ((>= 'p') . head) xs) ++ repeat "undefined")
 
 genCode :: [Cycle (StoredDefs, UsedLocals) ()] -> [Decl ()]
-genCode cs = [ctrlData, genDataCon "Label" (map (\(c,_,_)->c) ds), control, componentCode "microCode" mc, genDataCon "AluOp" ("AluNop" : map cName acs'), componentCode "alu" acs'] where
+genCode cs = [ctrlData, genDataCon "Label" (map (\(c,_,_)->c) ds), control, componentCode "microCode" mc, genDataCon "AluOp" ("AluNop" : map cName acs'), componentCode "alu" acs', toplevel] where
    acs = zipWith genAluClause [0..] cs
    acs' = catMaybes acs
    ds = genControl 0 [] cs
@@ -255,6 +260,40 @@ control = FunBind ()
      (UnGuardedRhs () (Tuple () Boxed [Var () (UnQual () (Ident () "cSP")),Con () (UnQual () (Ident () "Nothing")),Var () (UnQual () (Ident () "f"))])) Nothing
    ]
 
+toplevel :: Decl ()
+toplevel = FunBind () [Match () (Ident () "proccesor") [PWildCard ()] (UnGuardedRhs () (App () (Var () (UnQual () (Ident () "bundle"))) (Tuple () Boxed [Var () (UnQual () (Ident () "pc")),Var () (UnQual () (Ident () "z"))]))) (Just (BDecls () 
+   [register "pc" (Var () (UnQual () (Ident () "def"))) "pc'"
+   ,liftedComp ["ctrlOp", "ia", "ib", "oper", "stOp"] "microcode" ["pc"]
+   ,liftedComp ["nPC"] "succ" ["pc"]
+   ,liftedComp ["cSP'", "savePC", "pc'"] "ctrl" ["ctrlOp", "z", "nPC", "cSP", "retPC"]
+   ,register "cSP" (ExpTypeSig () (Lit () (Int () 0 "0")) (TyCon () (UnQual () (Ident () "Word8")))) "cSP'"
+   ,localBind ["retPC"] $ appN "asyncRam" ["d64", "cSP", "savePC"]
+   ,liftedComp ["rdA"] "agu" ["ia", "dSP"]
+   ,liftedComp ["rdB"] "agu" ["ib", "dSP"]
+   ,localBind ["a"] $ appN "asyncRam" ["d128", "rdA", "wrData"]
+   ,localBind ["b"] $ appN "asyncRam" ["d128", "rdB", "wrData"]
+   ,liftedComp ["x"] "inputMux" ["ia", "a"]
+   ,liftedComp ["y"] "inputMux" ["ib", "b"]
+   ,liftedComp ["z"] "alu" ["oper", "x", "y"]
+   ,register "dSP" (Lit () (Int () 0 "0")) "dSP'"
+   ,liftedComp ["dSP'", "wrData"] "stackMod" ["stOp", "dSP", "z"]
+   ]))]
+
+localBind :: [String] -> Exp () -> Decl ()
+localBind [x] e = PatBind () (PVar () (Ident () x)) (UnGuardedRhs () e) Nothing
+localBind xs  e = PatBind () (PTuple () Boxed (map (PVar () .Ident ()) xs)) (UnGuardedRhs () e) Nothing
+
+register :: String -> Exp () -> String -> Decl ()
+register x i y = localBind [x] (App () (App () (Var () (UnQual () (Ident () "register"))) i) (Var () (UnQual () (Ident () y))))
+
+liftedComp :: [String] -> String -> [String] -> Decl ()
+liftedComp [x] f [y] = localBind [x] $ appN "liftA" [f,y]
+liftedComp [x] f ys = localBind [x] $ appN ("liftA" ++ show (length ys)) (f:ys)
+liftedComp xs f [y] = localBind xs $ appN "liftB" [f,y]
+liftedComp xs f ys = localBind xs $ appN ("liftB" ++ show (length ys)) (f:ys)
+
+appN :: String -> [String] -> Exp ()
+appN f xs = appFun (Var () (UnQual () (Ident () f))) $ map (Var () . UnQual () . Ident ()) xs
 
 usedVarsA :: Show l => Action l -> [String]
 usedVarsA (Logic _ e) = usedVarsE e
