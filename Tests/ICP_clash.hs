@@ -11,6 +11,7 @@ import CLaSH.Prelude
 --import qualified Prelude
 import qualified Data.List ((++))
 import Debug.Trace
+import CLaSH.Sized.Internal.BitVector
 
 import Prog2Proc.SeqLogic
 
@@ -163,13 +164,8 @@ icp = do
 --divider = do
 divider :: Number -> Number -> SeqLogic s Number Number Number
 divider x y = do
---	x <- receive
-	let dividend	| x < 0 	= pack $ negate x
-					| otherwise = pack x
-	--clock -- clock between receives?
---	y <- receive
-	let divisor	| y < 0 	= pack $ negate y
-				| otherwise = pack y
+	let dividend = pack $ abs x
+	let divisor	= pack $ abs y
 
 	-- Create shift register for non-restoring division
 	shiftReg <- alloc $ (++#) (pack (0 :: Number)) dividend
@@ -177,26 +173,21 @@ divider x y = do
 	loop 41 downto 0 $ \j -> do
 		tmp <- peek shiftReg
 		let shiftReg' = shiftL tmp 1
-		let (r, q) = splitAtI $ bv2v shiftReg'
-		let rem = v2bv r -- r, or rem is the upperhalf of the shift register
-		let remN = unpack rem :: Number
-		let rem'	| remN < 0 	= (rem + divisor)
-					| otherwise = (rem - divisor)
-		let remN' = unpack rem' :: Number
-		let q0	| remN' < 0	= 0
-				| otherwise = 1
-		let q' = v2bv $ init q
+		let (r, q) = split# shiftReg'
+		let r'	| msb r == high	= r + divisor	-- r < 0? r + divisor
+				| otherwise		= r - divisor
+		let q0 	| msb r' == high= low	-- where is the clash bitflip function?
+				| otherwise 	= high
+		let (q', _) =  split# q
 --		let tr = "\t\t\t" ⧺ (show tmp) ⧺ "\t remN=" ⧺ (show remN) ⧺ "\t remN' =" ⧺ (show remN') ⧺ "\t q0=" ⧺ (show q0)
-		let tmp1 = {-trace tr $-} (++#) rem' $ (++#) q' q0
+		let tmp1 = {-trace tr $-} (++#) r' $ (++#) q' q0
 		shiftReg <~ tmp1
 
 	tmp2 <- peek shiftReg
-	let (t, out') = splitAtI $ bv2v tmp2
-	let outN = unpack (v2bv out') :: Number
---	let out' = unpack (pack $ select (snat :: SNat (IntPart + FracPart)) d1 (snat :: SNat (IntPart + FracPart)) $ bv2v tmp2) :: Number
+	let (_, out') = split# tmp2
 	let neg = xor (y < 0) (x < 0) -- one of the numbers negative? negate output
-	let out | neg 		= negate outN
-			| otherwise = outN
+	let out | neg 		= negate $ unpack out'
+			| otherwise = unpack out'
 	--emit (out)
 	return(out)
 
