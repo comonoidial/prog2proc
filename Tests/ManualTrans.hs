@@ -15,43 +15,43 @@ x <<< s = x `shiftL` fromIntegral s
 binGCD :: Word32 -> Word32 -> Word32       
 binGCD x 0 = x
 binGCD x y =
-  let a = dropZeros x in
-  let b = dropZeros y in
+  let a = dropTrailingZeros x in
+  let b = dropTrailingZeros y in
   let (s,g) = (min a b, max a b) in
-  binGCD s (g - s) <<< countZeros (x .|. y)
+  binGCD s (g - s) <<< countTrZeros (x .|. y)
 
-dropZeros :: Word32 -> Word32
-dropZeros i = i >>> countZeros i
+dropTrailingZeros :: Word32 -> Word32
+dropTrailingZeros i = i >>> countTrZeros i
 
-countZeros :: Word32 -> Word32
-countZeros n = if odd n then 0 else countZeros (n >>> 1) + 1
+countTrZeros :: Word32 -> Word32
+countTrZeros n = if odd n then 0 else countTrZeros (n >>> 1) + 1
 
 {-  -- *** Desugaring and flatten of expressions
 binGCD :: Word32 -> Word32 -> Word32
 binGCD x y = 
   if (y == 0) then x
   else
-    let a = dropZeros x in
-    let b = dropZeros y in
+    let a = dropTrailingZeros x in
+    let b = dropTrailingZeros y in
     let g = max a b in
     let s = min a b in
     let d = g - s in
     let r = binGCD s d in
     let o = x .|. y in
-    let e = countZeros o in
+    let e = countTrZeros o in
     r <<< e
 
-dropZeros :: Word32 -> Word32
-dropZeros i = 
-  let s = countZeros i in
+dropTrailingZeros :: Word32 -> Word32
+dropTrailingZeros i = 
+  let s = countTrZeros i in
   i >>> s
 
-countZeros :: Word32 -> Word32
-countZeros n = if odd n 
+countTrZeros :: Word32 -> Word32
+countTrZeros n = if odd n 
   then 0 
   else
     let m = n >>> 1 in
-    let c = countZeros m in
+    let c = countTrZeros m in
     c + 1
 -}
 
@@ -62,25 +62,25 @@ cont x f = f $! x
 binGCD x y k = if (y == 0)
   then cont x k
   else
-    dropZeros x
-      (\a -> dropZeros y
+    dropTrailingZeros x
+      (\a -> dropTrailingZeros y
         (\b -> cont (max a b)
           (\g -> cont (min a b)
             (\s -> cont (g - s)
               (\d -> binGCD s d
                 (\r -> cont (x .|. y)
-                  (\o -> countZeros o
+                  (\o -> countTrZeros o
                     (\e -> cont (r <<< e) k))))))))
 
-dropZeros i k = 
-  countZeros i
+dropTrailingZeros i k = 
+  countTrZeros i
     (\s -> cont (i >>> s) k)
 
-countZeros n k = if odd n 
+countTrZeros n k = if odd n 
   then cont 0 k
   else
     cont (n >>> 1)
-      (\m -> countZeros m 
+      (\m -> countTrZeros m 
         (\c -> cont (c + 1) k))
 -}
 
@@ -104,23 +104,23 @@ runBinGCD x y = binGCD x y CNil
 
 binGCD x y                   k = if (y == 0)
                              then cont x         k
-                             else dropZeros x    (CA x y               k)
-dropZeros i                  k  = countZeros i   (CI i                 k)
+                             else dropTrZeros x  (CA x y               k)
+dropTrZeros i                k  = countTrZeros i (CI i                 k)
 
-countZeros n                 k  = if odd n
+countTrZeros n               k  = if odd n
                              then cont 0         k
                              else cont (n >>> 1) (CJ n                 k)
 
-cont a (CA x y               k) = dropZeros y    (CB x y a             k)
+cont a (CA x y               k) = dropTrZeros y  (CB x y a             k)
 cont b (CB x y a             k) = cont (max a b) (CC x y a b           k)
 cont g (CC x y a b           k) = cont (min a b) (CD x y a b g         k)
 cont s (CD x y a b g         k) = cont (g - s)   (CE x y a b g s       k)
 cont d (CE x y a b g s       k) = binGCD s d     (CF x y a b g s d     k)
 cont r (CF x y a b g s d     k) = cont (x .|. y) (CG x y a b g s d r   k)
-cont o (CG x y a b g s d r   k) = countZeros o   (CH x y a b g s d r o k)
+cont o (CG x y a b g s d r   k) = countTrZeros o (CH x y a b g s d r o k)
 cont e (CH x y a b g s d r o k) = cont (r <<< e) k
 cont s (CI i                 k) = cont (i >>> s) k
-cont m (CJ n                 k) = countZeros m   (CK n m               k)
+cont m (CJ n                 k) = countTrZeros m (CK n m               k)
 cont c (CK n m               k) = cont (c + 1)   k
 cont x (CNil                  ) = x
 -}

@@ -137,17 +137,17 @@ The use of multiple recursive functions and a data dependent recursion depth mak
 binGCD :: Word32 -> Word32 -> Word32       
 binGCD x 0 = x
 binGCD x y = let
-    a = dropZeros x
-    b = dropZeros y
+    a = dropTrailingZeros x
+    b = dropTrailingZeros y
     (s,g) = (min a b, max a b)
-  in binGCD s (g - s) <<< countZeros (x .|. y)
+  in binGCD s (g - s) <<< countTrZeros (x .|. y)
 
-dropZeros :: Word32 -> Word32
-dropZeros i = i >>> countZeros i
+dropTrailingZeros :: Word32 -> Word32
+dropTrailingZeros i = i >>> countTrZeros i
 
-countZeros :: Word32 -> Word32
-countZeros n = if odd n then 0 
-  else countZeros (n >>> 1) + 1
+countTrZeros :: Word32 -> Word32
+countTrZeros n = if odd n then 0 
+  else countTrZeros (n >>> 1) + 1
 \end{lstlisting}
 The count trailing zeros could been implemented as a primitive operation as a fold over bits.
 
@@ -160,14 +160,14 @@ For this example we will split up all nested expression, in order to produce a v
 binGCD x y = 
   if (y == 0) then x
   else
-    let a = dropZeros x in
-    let b = dropZeros y in
+    let a = dropTrailingZeros x in
+    let b = dropTrailingZeros y in
     let g = max a b in
     let s = min a b in
     let d = g - s in
     let r = binGCD s d in
     let o = x .|. y in
-    let e = countZeros o in
+    let e = countTrZeros o in
     r <<< e
 \end{lstlisting}
 
@@ -178,14 +178,14 @@ With an already flattened program we only have to introduce a continuation for t
 binGCD x y k = if (y == 0)
   then cont x k
   else
-    dropZeros x
-      (\a -> dropZeros y
+    dropTrailingZeros x
+      (\a -> dropTrailingZeros y
         (\b -> cont (max a b)
           (\g -> cont (min a b)
             (\s -> cont (g - s)
               (\d -> binGCD s d
                 (\r -> cont (x .|. y)
-                  (\o -> countZeros o
+                  (\o -> countTrZeros o
                     (\e -> cont (r <<< e) k)
       )))))))
 \end{lstlisting}
@@ -208,8 +208,8 @@ data Cont
 
 binGCD x y         k  = if (y == 0)
                    then cont x         k
-                   else dropZeros x    (CA x y       k)
-cont a (CA x y     k) = dropZeros y    (CB x y a     k)
+                   else dropTrZeros x  (CA x y       k)
+cont a (CA x y     k) = dropTrZeros y  (CB x y a     k)
 cont b (CB x y a   k) = cont (max a b) (CC x y a b   k)
 cont g (CC x y a b k) = cont (min a b) (CD x y a b g k)
 \end{lstlisting}
@@ -570,6 +570,29 @@ Also the timing with respect to other components can be important, so the order 
 
 \subsection{The sequential logic monad}
 
+\begin{lstlisting}
+binGCD :: Word32 -> Word32 -> 
+  SeqLogic s Word32 Word32 Word32
+binGCD x y = do
+  let isZero = y == 0
+  if isZero then do
+    clock
+    return x
+  else do
+    clock
+    a <- call $ dropZeros x
+    b <- call $ dropZeros y
+    let g = max a b
+    clock
+    let s = min a b
+    clock
+    let d = g - s
+    r <- call $ binGCD s d
+    let o = x .|. y
+    e <- call $ countZeros o
+return (r <<< e)
+\end{lstlisting}
+
 \textit{To be explained}
 
 \subsection{Expressing control flow}
@@ -919,6 +942,43 @@ n -. xs = map (n-) xs
 (.*.) = zipWith (*)
 (.+.) = zipWith (+)
 (.-.) = zipWith (-)
+\end{lstlisting}
+
+\begin{lstlisting}
+divider :: Number -> Number -> 
+  SeqLogic s Number Number Number
+divider x y = do
+  let dividend | x < 0   = pack $ negate x
+               | otherwise = pack x
+  let divisor  | y < 0   = pack $ negate y
+               | otherwise = pack y
+  clock
+  -- Create shift register for non-restoring division
+  shiftReg <- alloc $ (++#) (pack (0 :: Number)) dividend
+  loop 41 downto 0 $ \j -> do
+    tmp <- peek shiftReg
+    let shiftReg' = shiftL tmp 1
+    let (r, q) = splitAtI $ bv2v shiftReg'
+    let rem = v2bv r
+    -- r, or rem is the upperhalf of the shift register
+    let remN = unpack rem :: Number
+    let rem'  | remN < 0  = (rem + divisor)
+              | otherwise = (rem - divisor)
+    let remN' = unpack rem' :: Number
+    let q0  | remN' < 0 = 0
+            | otherwise = 1
+    let q' = v2bv $ init q
+    let tmp1 = (++#) rem' $ (++#) q' q0
+    shiftReg <~ tmp1
+
+  tmp2 <- peek shiftReg
+  let (t, out') = splitAtI $ bv2v tmp2
+  let outN = unpack (v2bv out') :: Number
+  let neg = xor (y < 0) (x < 0)
+  -- one of the numbers negative? negate output
+  let out | neg     = negate outN
+      | otherwise = outN
+  return out
 \end{lstlisting}
 
 \lstset{basicstyle=\codefamily}
