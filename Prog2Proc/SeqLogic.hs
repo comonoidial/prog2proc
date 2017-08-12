@@ -22,6 +22,19 @@ clocked x = do
   clock
   return r
 
+infixl 2 |^
+(|^) :: a -> (a -> b -> c) -> b -> SeqLogic s i o c
+(|^) x f y = do
+  let a = x
+  clock
+  let b = y
+  clock
+  return (f a b)
+
+infixl 2 ^|
+(^|) :: (a -> b) -> a -> b
+(^|) f x = f x
+
 call :: SeqLogic s i o a -> SeqLogic s i o a
 call f = do
   clock
@@ -51,6 +64,12 @@ allocArr = command . AllocArr
 peek :: Ref s a -> SeqLogic s i o a
 peek = command . Load
 
+infixr 0 <~<
+(<~<) :: Ref s a -> SeqLogic s i o a -> SeqLogic s i o ()
+(<~<) p x = do
+  v <- x
+  p <~ v
+
 infixr 1 <~
 (<~) :: Ref s a -> a -> SeqLogic s i o ()
 (<~) p x = command (Store p x)
@@ -75,6 +94,21 @@ data LoopDir = Up | Down
 
 upto = Up
 downto = Down
+
+loopAccum :: (Enum k, Ord k) => (k, LoopDir, k) -> x -> (k -> x -> SeqLogic s i o x) -> SeqLogic s i o x
+loopAccum (n, Up, m) a body 
+  | n <= m = do
+    clock
+    x <- body n a
+    loopAccum (succ n, Up, m) x body
+  | otherwise = clock >> return a
+loopAccum (n, Down, m) a body 
+  | n >= m = do 
+    clock
+    x <- body n a
+    loopAccum (pred n, Down, m) x body
+  | otherwise = clock >> return a
+
 
 loop :: (Enum k, Ord k) => k -> LoopDir -> k -> (k -> SeqLogic s i o ()) -> SeqLogic s i o ()
 loop n Up m body 

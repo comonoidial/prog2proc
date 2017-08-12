@@ -29,13 +29,9 @@ icp = do
     let pointY = vecPy!!i
     let vecDy = pointY -. vecQy
     clock
-    let vecDx2 = vecDx .*. vecDx
+    vecMagSq <- vecDx.*.vecDx |^(.+.)^| vecDy.*.vecDy
     clock
-    let vecDy2 = vecDy .*. vecDy
-    clock
-    let vecSquaredDist = vecDx2 .+. vecDy2
-    clock
-    let (j,k) = indexSmallestTwo vecSquaredDist
+    let (j,k) = indexSmallestTwo vecMagSq
     normLV <- start normLineVec
     clock
     let px  = vecPx!!i
@@ -50,11 +46,9 @@ icp = do
     inject normLV (py, myA, myB)
     vecMy?i <~ myA
     clock
-    nx <- extract normLV
-    vecNx?i <~ nx
+    vecNx?i <~< extract normLV
     clock
-    ny <- finish normLV
-    vecNy?i <~ ny
+    vecNy?i <~< finish normLV
 
   v <- allocArr 4
   v0 <- peek vecNx
@@ -63,28 +57,19 @@ icp = do
   v1 <- peek vecNy
   v?1 <~ v1
   clock
-  let v2'' = vecPx .*. v0
+  v?2 <~< vecPy.*.v1 |^(.+.)^| vecPx.*.v0
   clock
-  let v2'  = vecPy .*. v1
-  clock
-  v?2 <~ v2' .+. v2''
-  clock
-  let v3'' = vecPx .*. v1
-  clock
-  let v3'  = vecPy .*. v0
-  clock
-  v?3 <~ v3'' .-. v3'
+  v?3 <~< vecPx.*.v1 |^(.-.)^| vecPy.*.v0
   clock
   vecMx' <- peek vecMx
   let b'' = vecMx' .*. v0
   clock
   vecMy' <- peek vecMy
-  let b'  = vecMy' .*. v1
+  let b' = vecMy' .*. v1
   clock
-  let b   = b' .+. b''
+  let b = b' .+. b''
 
-  u <- allocArr 4
-  call $ qr v u
+  u <- call $ gram_schmidt v
 
   x <- allocArr 4
   linSolv <- start linearSolver
@@ -96,8 +81,7 @@ icp = do
         v_k <- peek (v?k)
         r_jk <- inline $ u_j `dotProd` v_k
         inject linSolv r_jk
-     x_j <- extract linSolv
-     x?j <~ x_j
+     x?j <~< extract linSolv
   finish linSolv
   
   transX <- peek (x?0)
@@ -108,21 +92,13 @@ icp = do
   clock
   sinTh <- peek (x?3)
   clock
-  let vecPxCt = cosTh *. vecPx
+  vecRotX <- cosTh*.vecPx |^(.-.)^| sinTh*.vecPy
   clock
-  let vecPySt = sinTh *. vecPy
+  let vecPx' = transX +. vecRotX
   clock
-  let vecPxCtPySt = vecPxCt .-. vecPySt
+  vecRotY <- cosTh*.vecPy |^(.+.)^| sinTh*.vecPx
   clock
-  let vecPx' = transX +. vecPxCtPySt
-  clock
-  let vecPyCt = cosTh *. vecPy
-  clock
-  let vecPxSt = sinTh *. vecPx
-  clock
-  let vecPyCtPxSt = vecPyCt .+. vecPxSt
-  clock
-  let vecPy' = transY +. vecPyCtPxSt
+  let vecPy' = transY +. vecRotY
   clock
 
   emit (vecPx')
@@ -134,36 +110,30 @@ linearSolver = do
   x <- allocArr 4
   loop 3 downto 0 $ \j -> do
      t_j <- receive
-     tmp <- alloc t_j
-     loop 3 downto (j+1) $ \k -> do
+     t <- loopAccum (3, downto, j+1) t_j $ \k t -> do
         r_jk <- receive
         x_k <- peek (x?k)
         let rx = r_jk * x_k
         clock
-        t <- peek tmp
-        tmp <~ t - rx
+        return (t - rx)
      r_jj <- receive
-     t <- peek tmp
      let x_j = t / r_jj
      x?j <~ x_j
      emit x_j
   return ()
 
-qr :: Ref s [[Float]] -> Ref s [[Float]] -> SeqLogic s [Float] [Float] ()
-qr v u = do
+gram_schmidt :: Ref s [[Float]] -> SeqLogic s [Float] [Float] (Ref s [[Float]])
+gram_schmidt v = do
+  u <- allocArr 4
   loop 0 upto 3 $ \j -> do
      v_j <- peek (v?j)
-     tmp <- alloc v_j
-     loop 0 upto (j-1) $ \k -> do
+     t <- loopAccum (0, upto , j-1) v_j $ \k t -> do
         u_k <- peek (u?k)
         vj_uk <- inline $ v_j `project` u_k
         clock
-        t <- peek tmp
-        tmp <~ t .-. vj_uk
-     t <- peek tmp
-     u_j <- inline $ normalize t
-     u?j <~ u_j
-  return ()
+        return (t .-. vj_uk)
+     u?j <~< inline $ normalize t
+  return u
 
 normLineVec :: SeqLogic s (Float, Float, Float) Float Float
 normLineVec = do
