@@ -164,32 +164,39 @@ icp = do
 --divider = do
 divider :: Number -> Number -> SeqLogic s Number Number Number
 divider x y = do
-	let dividend = pack $ abs x
+	let dividend =  abs x
 	let divisor	= pack $ abs y
 
 	-- Create shift register for non-restoring division
-	shiftReg <- alloc $ (++#) (pack (0 :: Number)) dividend
+	shiftReg <- alloc (0 :: Number, dividend)-- $ (++#) (pack (0 :: Number)) dividend
 	-- loop length = IntPart + FracPart + FracPart
 	loop 41 downto 0 $ \j -> do
 		tmp <- peek shiftReg
-		let shiftReg' = shiftL tmp 1
+		let shiftReg' = shiftL (pack tmp) 1
 		let (r, q) = split# shiftReg'
-		let r'	| msb r == high	= r + divisor	-- r < 0? r + divisor
-				| otherwise		= r - divisor
-		let q0 	| msb r' == high= low	-- where is the clash bitflip function?
-				| otherwise 	= high
-		let (q', _) =  split# q
---		let tr = "\t\t\t" ⧺ (show tmp) ⧺ "\t remN=" ⧺ (show remN) ⧺ "\t remN' =" ⧺ (show remN') ⧺ "\t q0=" ⧺ (show q0)
-		let tmp1 = {-trace tr $-} (++#) r' $ (++#) q' q0
+		let r' = rplusd r divisor
+		let q0 = bitNot $ msb r'
+		let (q'', _) =  split# (q ::BitVector (IntPart + FracPart))
+		let q' = q'' ++# q0
+		let tmp1 = (unpack r', unpack q')
 		shiftReg <~ tmp1
 
-	tmp2 <- peek shiftReg
-	let (_, out') = split# tmp2
+	(_, out') <- peek shiftReg
 	let neg = xor (y < 0) (x < 0) -- one of the numbers negative? negate output
-	let out | neg 		= negate $ unpack out'
-			| otherwise = unpack out'
-	--emit (out)
+	let out = conNeg neg out'
 	return(out)
+
+
+conNeg b x	| b = negate x
+			| otherwise = x
+
+rplusd r di	| msb r == high = r + di
+			| otherwise 	= r - di
+
+bitNot b 	| b == high = low
+			| otherwise = high
+
+
 
 linearSolver :: SeqLogic s Number Number ()
 linearSolver = do
