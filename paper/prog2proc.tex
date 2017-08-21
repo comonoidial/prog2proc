@@ -44,56 +44,44 @@ From programs written in an embedded Haskell DSL with explicit clock cycle bound
 
 
 \section{Introduction}
-The past decades we received hardware performance gains first from higher clock frequencies and later from increased parallelism.
+The past decades we got hardware performance gains first from higher clock frequencies and later from increased parallelism.
 The energy costs (from data centers to mobile devices) are now the main bottleneck in computing, thus raising clock frequencies is no longer an option.
 And exploiting more parallelism is getting harder with diminishing returns.
-This leaves specialisation of hardware designs as the key method to gain effiency and performance.
+This leaves specialisation of hardware designs as the key method to gain efficiency and performance.
 
-The amount of logic gates avaible on a chip is still increasing, allowing complex algorithm to be directly implemented in hardware.
+The amount of logic gates available on a chip is still increasing, allowing complex algorithms to be directly implemented in hardware.
 However the costs of producing a high performance chips with the leading edge technology has grown to the point where only few companies have the scale to design new ones.
 And GPUs, while offering much parallel computation throughput, are not always suitable because of their energy consumption, and have latencies too big for real time applications.
 
 The availability of large reconfigurable hardware chips, known as field-programmable gate arrays (FPGA), provides the opportunity to apply hardware design to many specialised applications.
 Users of FPGAs range from datacenters requiring energy efficiency and fast response times, to high performance sensor data processing on a flying drone.
-The complexity of algorithms to be mapped onto FPGAs and fast changing requirements of specialised applications, makes the manual hardware design process the bottleneck in time and costs.
+The complexity of algorithms to be mapped onto FPGAs and the fast changing requirements of specialised applications, makes the manual hardware design process the bottleneck in time and costs.
 
-As functional programmers we were frustrated by the low level nature of common hardware design tools and languages, and how repetitive most of hardware design process is.
+As functional programmers we were frustrated by the low level nature of common hardware design tools and languages, and how repetitive most of the hardware design process is.
 Thus we are looking for higher level (and functional) abstractions for describing hardware, and to explore and bridge the gap between software and hardware.
 
-%FPGAs became large enough for many applications.
-%FPGAs even available as accelerators for cloud computing.
-
-%From the outside hardware is usually a small black box with number of pins connected to it.
-%The inside a of chip consists of a large numbers of transistors are connected by wires.
-
-% Some questions after reflecting on my own research:
-%\begin{itemize}
-% \item What is the real difference between software and hardware?
-% \item Why seems instruction set design obvious in hindsight?
-%% \item What are the important choices in ISA/processor design?
-%% \item How to make processor design a more systematic process?
-%\end{itemize}
-
 In the first part of this paper we show a systematic transformation process of a functional program into a simple processor using well known techniques and some hardware oriented optimisations.
-Next we apply this concept of application specific processor generation to a practical useful setting.
-An embedded Haskell DSL with explicit clock cycle boundaries is introduced, which gives the hardware designer a lot control over the generated hardware implementation.
+Next we apply this concept to the generation of an application specific processor to a practical useful setting.
+An embedded Haskell DSL with explicit clock cycle boundaries is introduced, which gives the hardware designer a lot of control over the generated hardware implementation.
 With a tool to generate \clash code from this DSL, we keep the whole hardware design process in Haskell with executable/simulatable code at every stage.
 As a demonstration application we use the hardware implementation on an FPGA of the signal processing for a laser range finder.
 
 
 \subsection{Background: a Haskell based hardware design process}
 Functional languages have a long history with hardware design \cite{Sheeran2005}.
-A hardware design process in Haskell using \clash is described in \cite{Robin:Hendrik} and contains the following steps:
-The first step is to choose an algorithm to solve the a certain problem.
-While choosing an algorithm it is important to keep in mind how well the target hardware could potentially solve the problem.
-FPGAs are suitable for reusing computational structures and consistent data streams.
-The next step is to specify the algorithm in executable Haskell code. After which the code can be rewritten in executable \clash -code.
+\cite{Robin:Hendrik} propose the following hardware design process.
+To start, one must choose an algorithm to solve a certain problem.
+While choosing an algorithm it is important to keep in mind how well the target hardware could potentially solve the problem, where FPGAs are suitable for reusing computational structures and consistent data streams.
+Next, specify the algorithm in executable Haskell code. After which the code can be rewritten in executable \clash -code.
 The functionality can be evaluated/simulated in the Haskell/\clash. The \clash compiler can automatically generate a hardware architecture which can be synthesized to determine the hardware resource costs.
 The synthesized architecture consumes a certain amount of hardware resources but the target device has a limited amount of resources available.
 These resource constrains are in terms of memory, memory bandwidth, logical elements, and digital signal processors (DSPs).
-There are also constrains on latency and throughput. There are several methods to create a feasible design for the given resource constrains. One could split the algorithm in steps to reduce data access to limit the memory bandwidth.
+There are also constrains on latency and throughput.
+There are several methods to create a feasible design for the given resource constrains.
+One could split the algorithm in steps to reduce data access to reduce the memory bandwidth.
 Finding patterns in the algorithm allows for the reuse of hardware components over time.
-This limits both memory and computational area on an FPGA. Breaking long latency computation in parts enable faster clock frequencies which influences latency and throughput.
+This reduces both memory and computational area on an FPGA.
+Breaking long latency computation in parts enables faster clock frequencies which influences latency and throughput.
 Pipelining and multistep computation requires glue logic/control to operate.
 During the time-area trade-off one can iterate through all the above mentioned methods. 
 
@@ -131,6 +119,13 @@ Being a structural hardware description language \clash does not support dynamic
 %Steps 6 to 9 take the most effort, and step 9 is very error prone and can be very complex.
 
 \section{Rewriting a program into a processor}
+We will first look at the process of turning a program into feasible hardware on a conceptual level.
+The choices we make depend on basic knowledge about what is not possible and what is efficient in hardware.
+Each step in the process addresses a hardware problem using familiar transformations from functional languages and compilers.
+The firsts half of the transformations steps are similar to the ones removing recursion in \cite{Zhai} and \cite{Ingmar}.
+
+
+\subsection{Example program: binary greatest common divisor}
 As a running example in this section we use a binary variant of greatest common divisor, that doesn't use any complex arithmetic operation.
 The use of multiple recursive functions and a data dependent recursion depth makes it non trivial to implement this computation in hardware.
 \begin{lstlisting}
@@ -172,7 +167,8 @@ binGCD x y =
 \end{lstlisting}
 
 \subsection{Explicit sequential execution}
-Making control flow explicit using continuation passing style \cite{AppelCwC} is a standard method in compilers for functional languages.
+The above sequence of let expressions suggests an execution order but does not enforce it.
+We will make control flow explicit using continuation passing style \cite{AppelCwC}, which is a standard method in compilers for functional languages.
 With an already flattened program we only have to introduce a continuation for the body of each let expression:
 \begin{lstlisting}
 binGCD x y k = if (y == 0)
@@ -189,12 +185,11 @@ binGCD x y k = if (y == 0)
                     (\e -> cont (r <<< e) k)
       )))))))
 \end{lstlisting}
-Here we use the $cont$ function to make continuation application explicit. \\
+Here we use the $cont$ function (reversed application) to make continuation application explicit.
 
-\textit{To add a bit more information for those not familar with CPS}
-
-\subsection{Defunctionalising continuations}
-Defunctionalisation \cite{Reynolds} is well known technique to transform functions into datatypes. \\
+\subsection{Defunctionalising the continuations}
+In hardware we can not have higher order functions, thus we have to eliminate the continuations.
+We can use well known technique of defunctionalisation \cite{Reynolds} to transform functions into datatypes. \\
 
 \textit{Explanation to be added here}
 
@@ -217,25 +212,39 @@ cont g (CC x y a b k) = cont (min a b) (CD x y a b g k)
 
 The steps of continuation passing style and defunctionalisation could be combined into one as shown in 'Calculating Correct Compilers'\cite{CCC}.
 
+\subsection{Flattening continuations with a stack}
+In hardware all data need to be of fixed size, thus we can not have arbitrarily nested continuations.
+Looking at how the continuations are used, we can see that only one layer of continuation is added/removed at a time.
+The nested structure behaves like a stack, thus we flatten the continuations in a nonrecursive context datatype and use a list to represent the stack.
 
-\subsection{State machine with a stack}
-Here we apply the tranformation from translating recursive functions to hardware in \cite{Ingmar} and \cite{Zhai}.
-
-Using the observation that nested continuations form a stack, the nested continuation datatype can be flattened context dataype.
-And we can combine functions into one by making each a data type, including the continuation application function. \\
-
-\textit{To be explained, this key step in the process}
-
+\lstset{basicstyle=\codesmall}
 \begin{lstlisting}
-data Call = GCD Word32 Word32 | DropZs Word32
-          | CntZs Word32 | Cont Word32
+type Stack  = [Context]
 data Context
   = CA Word32 Word32
   | CB Word32 Word32 Word32
   | CC Word32 Word32 Word32 Word32
   | CD Word32 Word32 Word32 Word32 Word32
   ...
-type Stack  = [Context]
+
+binGCD x y         cs  = if (y == 0)
+                    then cont x         cs
+                    else dropZeros x    (CA x y      :cs)
+cont a (CA x y    :cs) = dropZeros y    (CB x y a    :cs)
+cont b (CB x y a  :cs) = cont (max a b) (CC x y a b  :cs)
+cont g (CC x y a b:cs) = cont (min a b) (CD x y a b g:cs)
+\end{lstlisting}
+\lstset{basicstyle=\codefamily}
+
+\subsection{From mutual recursion to a state machine}
+The next problem is that we still have (mutual) recursion that is not realisable in hardware.
+We can combine functions into a single step function by introducing a data type, including the continuation application function. \\
+
+%\textit{To be explained more, this key step in the process}
+
+\begin{lstlisting}
+data Call = GCD Word32 Word32 | DropZs Word32
+          | CntZs Word32 | Cont Word32
 
 step :: Call -> Stack -> (Call, Stack)
 step (GCD x y)        cs = if y == 0
@@ -269,7 +278,9 @@ step (Cont g)        (CC x y a b   : cs) =
 \caption{Hardware structure of the stack machine}
 \label{fig:stack}
 \end{figure}
-Figure \ref{fig:stack} shows the stack machine structure as hardware
+Figure \ref{fig:stack} shows the stack machine structure as hardware.
+The transformation steps taking until now are similar to the ones for translating recursive functions to hardware in \cite{Ingmar} and \cite{Zhai}.
+
 
 \subsection{Separating the data stack}
 Most steps have a lot of data copied from one continuation to another, and stack is very wide because some continuations capture many free variables.
@@ -359,7 +370,7 @@ step CC  = (next       ,peek 2,peek 1, min  ,push)
 \end{lstlisting}
 \lstset{basicstyle=\codefamily}
 
-[TODO] check if such a description would be synthesizable in \clash{}
+\textit{TODO check if such a description would be synthesizable in \clash{}}
 
 \subsection{Control by microcode}
 Each step is now defined as a set of functions to be executed, however functions can not directly exist in hardware.
@@ -490,16 +501,15 @@ stackMod (PopNPush n) dSP z =
 \begin{figure}
 \centering
 \begin{tikzpicture}
-\node[draw, shape=rectangle, minimum width=6em, minimum height=8em] (im) {InstrMem};
-\node[draw, shape=rectangle, rounded corners, minimum width=8em, above right of=im, xshift=7em] (dec) {Decode};
-\node[draw, shape=rectangle, minimum width=3em, below of=im, node distance=6.5em] (pc) {PC};
+\node[draw, shape=rectangle, rounded corners, minimum width=20em, minimum height=3em] (mc) {Microcode table};
+\node[draw, shape=rectangle, minimum width=3em, below left of=mc, node distance=7em, xshift=-3em] (pc) {PC};
 \node[draw, shape=rectangle, rounded corners, right of=pc, xshift=0.5em, inner sep=0.15em] (npc) {\begin{scriptsize}$+1$\end{scriptsize}};
 \node[draw, shape=rectangle, rounded corners, right of=pc, xshift=1em, yshift=-1.5em] (cc) {\begin{small}Control\end{small}};
 \node[draw, shape=rectangle, minimum width=3em, minimum height=6em, below of=pc, node distance=5.5em, align=center] (cs) {Ctrl\\stack};
-\node[draw, shape=rectangle, minimum width=6em, minimum height=10em, below of=im, node distance=10em, align=center, xshift=16em] (ds) {Data\\stack};
-\node[draw, shape=trapezium, minimum width=3em, minimum height=2em, below of=dec, node distance=4em, xshift=-1em, rotate=90] (alu) {};
+\node[draw, shape=rectangle, minimum width=6em, minimum height=10em, below of=mc, node distance=10em, align=center, xshift=9em, yshift=-1em] (ds) {Data\\stack};
+\node[draw, shape=trapezium, minimum width=3em, minimum height=2em, below of=mc, node distance=4em, xshift=0em, rotate=90] (alu) {};
 \node[xshift=-0.5em, rotate=90] at (alu.center) {Alu};
-\node[draw, shape=rectangle, rounded corners, below right of=alu, node distance=4.5em, yshift=-0.7em, inner sep=0.2em, align=center] (sp) {\begin{scriptsize}Stack\end{scriptsize}\\\begin{scriptsize}pusher\end{scriptsize}};
+\node[draw, shape=rectangle, rounded corners, below right of=alu, node distance=4.5em, yshift=-0.7em, inner sep=0.2em, align=center] (sp) {\begin{scriptsize}Stack\end{scriptsize}\\\begin{scriptsize}mod\end{scriptsize}};
 \draw ([yshift=0.5em] alu.south) -- ([xshift=-0.8em] alu.south) -- ([yshift=-0.5em] alu.south);
 \node[draw, shape=trapezium, minimum width=1em, minimum height=0.5em, right of=alu, node distance=3em, yshift=1em, rotate=90] (ina) {};
 \node[draw, shape=trapezium, minimum width=1em, minimum height=0.5em, right of=alu, node distance=2em, yshift=-1em, rotate=90] (inb) {};
@@ -507,21 +517,20 @@ stackMod (PopNPush n) dSP z =
 \draw[->] (inb.north) -- (alu.south west);
 \draw[->] ([xshift=1em] ds.north) |- (ina.south);
 \draw[->] ([xshift=-1em] ds.north) |- (inb.south);
-\draw[->] (pc.north) -- (im.south);
+\draw[->] (pc.north) -- ([xshift=-8em] mc.south);
 \draw[->] (pc.east) -- (npc.west);
 \draw[->] (npc.south) -- ([xshift=-0.5em] cc.north);
-\draw[->] ([yshift=1.85em] im.east) -- (dec.west);
 \draw[->] ([yshift=0.3em] cc.west) -| (pc.south);
 \draw[->] ([yshift=-0.3em] cc.west) -| (cs.north);
 \draw[->] ([yshift=2.5em]cs.east) -| (cc.south);
-\draw[->] ([yshift=0.5em] sp.east) -- ([yshift=4.45em] ds.west);
+\draw[->] ([yshift=0.5em] sp.east) -- ([yshift=3.75em] ds.west);
 \draw[->] (alu.north) -- ([xshift=-0.5em] alu.north) |- (sp.west);
 \draw[->, densely dashed] (alu.north) -- ([xshift=-0.5em] alu.north) |- (cc.east);
-\draw[->, densely dotted] ([xshift=-3.5em] dec.south) -- ([xshift=1em] cc.north);
-\draw[->, densely dotted] ([xshift=-1em] dec.south) -- (alu.east);
-\draw[->, densely dotted] ([xshift=1em] dec.south) -- (inb.east);
-\draw[->, densely dotted] ([xshift=2em] dec.south) -- (ina.east);
-\draw[->, densely dotted] ([xshift=3em] dec.south) -- ([xshift=0.8em]sp.north);
+\draw[->, densely dotted] ([xshift=-3em] mc.south) -- ([xshift=1em] cc.north);
+\draw[->, densely dotted] ([xshift=0em] mc.south) -- (alu.east);
+\draw[->, densely dotted] ([xshift=2em] mc.south) -- (inb.east);
+\draw[->, densely dotted] ([xshift=3em] mc.south) -- (ina.east);
+\draw[->, densely dotted] ([xshift=4em] mc.south) -- ([xshift=0.8em]sp.north);
 \end{tikzpicture}
 \caption{Architecture of derived processor}
 \label{fig:proc}
@@ -558,7 +567,7 @@ sim ds (pc:cs) = sim ds' cs' where
   cs' = ctrl f z (pc : cs)
 \end{lstlisting}
 
-\textit{TODO heap memory, pipelining and input/ouput }
+% \textit{TODO heap memory, pipelining and input/ouput }
 
 \section{A DSL for explicitly clocked programs}
 When designing application specific hardware components we care a lot about performance and/or efficiency, otherwise we could have used some existing processor.
@@ -861,7 +870,7 @@ linearSolver = do
   return ()
 \end{lstlisting}
 
-QR decomposition using the Gram–Schmidt process:
+QR decomposition using the Gramï¿½Schmidt process:
 \begin{lstlisting}
 qr :: Ref s [[Float]] -> Ref s [[Float]] ->
    SeqLogic s [Float] [Float] ()
@@ -945,49 +954,32 @@ n -. xs = map (n-) xs
 \end{lstlisting}
 
 \begin{lstlisting}
-divider :: Number -> Number -> 
-  SeqLogic s Number Number Number
+divider :: Number-> Number -> SeqLogic s i o Number
 divider x y = do
-  let dividend | x < 0   = pack $ negate x
-               | otherwise = pack x
-  let divisor  | y < 0   = pack $ negate y
-               | otherwise = pack y
-  clock
+  let dividend = abs x
+  let divisor = pack $ abs y
   -- Create shift register for non-restoring division
-  shiftReg <- alloc $ (++#) (pack (0 :: Number)) dividend
-  loop 41 downto 0 $ \j -> do
-    tmp <- peek shiftReg
-    let shiftReg' = shiftL tmp 1
-    let (r, q) = splitAtI $ bv2v shiftReg'
-    let rem = v2bv r
-    -- r, or rem is the upperhalf of the shift register
-    let remN = unpack rem :: Number
-    let rem'  | remN < 0  = (rem + divisor)
-              | otherwise = (rem - divisor)
-    let remN' = unpack rem' :: Number
-    let q0  | remN' < 0 = 0
-            | otherwise = 1
-    let q' = v2bv $ init q
-    let tmp1 = (++#) rem' $ (++#) q' q0
-    shiftReg <~ tmp1
+  let shReg = alloc (0 :: Number, dividend)
+  (_, out) <- loopAccum (41, downto, 0) shReg $ \j tmp -> do
+    let shiftReg' = shiftL (pack tmp) 1
+    let (r, q) = split# shiftReg'
+    let r' = plusMinus r divisor
+    let q0 = bitNot $ msb r'
+    let (q'', _) =  split# (q::BitVector (IntPart+FracPart))
+    let q' = q'' ++# q0
+    return (unpack r', unpack q')
 
-  tmp2 <- peek shiftReg
-  let (t, out') = splitAtI $ bv2v tmp2
-  let outN = unpack (v2bv out') :: Number
-  let neg = xor (y < 0) (x < 0)
-  -- one of the numbers negative? negate output
-  let out | neg     = negate outN
-      | otherwise = outN
-  return out
+  let isNeg = xor (y < 0) (x < 0)
+  return $ condNeg isNeg out
 \end{lstlisting}
 
 \lstset{basicstyle=\codefamily}
 
 \subsection{Comparison with manual designed hardware}
-\begin{itemize}
-  \item some remarks about the differences between the implementations and effort from hardware designer
-  \item compare hardware implementation with the generated results from this section
-\end{itemize}  
+%\begin{itemize}
+%  \item some remarks about the differences between the implementations and effort from hardware designer
+%  \item compare hardware implementation with the generated results from this section
+%\end{itemize}  
 
 \textit{Work in progress}
 
