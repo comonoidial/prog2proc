@@ -125,7 +125,49 @@ cont c (CK n m               k) = cont (c + 1)   k
 cont x (CNil                  ) = x
 -}
 
-{-  -- *** Translation into stack based step function
+{-  -- *** Flatten continuations into a stack
+data Context
+  = CA Word32 Word32
+  | CB Word32 Word32 Word32
+  | CC Word32 Word32 Word32 Word32
+  | CD Word32 Word32 Word32 Word32 Word32
+  | CE Word32 Word32 Word32 Word32 Word32 Word32
+  | CF Word32 Word32 Word32 Word32 Word32 Word32 Word32
+  | CG Word32 Word32 Word32 Word32 Word32 Word32 Word32 Word32
+  | CH Word32 Word32 Word32 Word32 Word32 Word32 Word32 Word32 Word32
+  | CI Word32
+  | CJ Word32
+  | CK Word32 Word32
+
+type Stack  = [Context]
+
+runBinGCD x y = binGCD x y []
+
+binGCD x y                     cs  = if (y == 0)
+                                then cont x          cs
+                                else dropTrZeros x  (CA x y               : cs)
+dropTrZeros i                  cs  = countTrZeros i (CI i                 : cs)
+
+countTrZeros n                 cs  = if odd n
+                                then cont 0         cs
+                                else cont (n >>> 1) (CJ n                 : cs)
+
+cont a (CA x y               : cs) = dropTrZeros y  (CB x y a             : cs)
+cont b (CB x y a             : cs) = cont (max a b) (CC x y a b           : cs)
+cont g (CC x y a b           : cs) = cont (min a b) (CD x y a b g         : cs)
+cont s (CD x y a b g         : cs) = cont (g - s)   (CE x y a b g s       : cs)
+cont d (CE x y a b g s       : cs) = binGCD s d     (CF x y a b g s d     : cs)
+cont r (CF x y a b g s d     : cs) = cont (x .|. y) (CG x y a b g s d r   : cs)
+cont o (CG x y a b g s d r   : cs) = countTrZeros o (CH x y a b g s d r o : cs)
+cont e (CH x y a b g s d r o : cs) = cont (r <<< e) cs
+cont s (CI i                 : cs) = cont (i >>> s) cs
+cont m (CJ n                 : cs) = countTrZeros m (CK n m               : cs)
+cont c (CK n m               : cs) = cont (c + 1)   cs
+cont x []                          = x
+
+-}
+
+{-  -- *** Combining functions into state machine
 data Call = GCD Word32 Word32 | DropZs Word32 | CntZs Word32 | Cont Word32
 
 data Context
