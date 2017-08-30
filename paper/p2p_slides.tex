@@ -34,7 +34,7 @@
 \item All hardware is constrained by energy %(battery/electricity bill)
 \item No more gains in clock frequency % (too much heat)
 \item More parallelism is hard to find %and has diminishing returns
-\item Alternative is specialisation for energy efficient performance
+\item Alternative is specialisation % for energy efficient performance
 \end{itemize}
 \end{block}
 
@@ -43,7 +43,7 @@
 \item FPGAs are chips that can be 'rewired' to any hardware design
 %\item Can contain 100s of multipliers and 10s MB of memory
 \item Large size of current FPGAs allow for complex computations
-\item Avoiding the slow and expensive custom chip production
+%\item Avoiding the slow and expensive custom chip production
 \item Slower than custom hardware but can be more specialized
 \end{itemize}
 \end{block}
@@ -53,7 +53,7 @@
 
 
 \begin{frame}{What makes hardware different from software?}
-Hardware is a bounded box of computations with fixed in/outputs, and internally it is a graph of smaller hardware components
+Hardware is a bounded box of computations with fixed in/outputs %, and internally it is a graph of smaller hardware components
 \begin{center}
 \includegraphics[scale=0.6]{schematic}
 \end{center}
@@ -62,7 +62,7 @@ Hardware is a bounded box of computations with fixed in/outputs, and internally 
 \begin{itemize}
 \item No dynamic recursion or unbounded loops
 \item All data is fixed size, no higher order functions
-\item Too large means splitting in steps to reuse hardware over time
+\item \alert{Too large means splitting in steps to reuse hardware over time}
 \end{itemize}
 \end{block}
 \end{frame}
@@ -217,23 +217,25 @@ cont g (CC x y a b:cs) = cont (min a b) (CD x y a b g:cs)
 \begin{frame}[fragile]{From mutual recursion to a single step function}
 \begin{block}{}
 \begin{verbatim}
-data Call = GCD Word32 Word32 | DropZs Word32
-          | CntZs Word32 | Cont Word32
+data Call = GCD Word32 Word32
+          | DropZs Word32
+          | CntZs Word32
+		  | Cont Word32
 \end{verbatim}
 \end{block}
 \begin{block}{}
 \begin{verbatim}
 step :: Call -> Stack -> (Call, Stack)
 step (GCD x y)        cs = if y == 0
-  then (Cont x      , cs               )
-  else (DropZs x    , CA x y       : cs)
-step (Cont a)        (CA x y       : cs) =
-     (DropZs y      , CB x y a     : cs)
-step (Cont b)        (CB x y a     : cs) =
-     (Cont (max a b), CC x y a b   : cs)
-step (Cont g)        (CC x y a b   : cs) =
-     (Cont (min a b), CD x y a b g : cs)
+  then (Cont x      , cs             )
+  else (DropZs x    , CA x y     : cs)
+step (Cont a)        (CA x y     : cs) =
+     (DropZs y      , CB x y a   : cs)
+step (Cont b)        (CB x y a   : cs) =
+     (Cont (max a b), CC x y a b : cs)
 \end{verbatim}
+%step (Cont g)        (CC x y a b   : cs) =
+%     (Cont (min a b), CD x y a b g : cs)
 \end{block}
 \end{frame}
 
@@ -273,7 +275,7 @@ step (Cont g)       (CC x y a b  :cs) =
 \begin{block}{}
 \begin{verbatim}
 step :: State -> CtrlStack -> DataStack ->
-       (State, CtrlStack, DataStack)
+       (State ,  CtrlStack ,  DataStack)
 step Cont    (CA:cs)       (a:y:x:ds) = 
     (DropZs,  CB:cs,      y:a:y:x:ds)
 step Cont    (CB:cs)     (b:a:y:x:ds) = 
@@ -412,7 +414,7 @@ alu Sub   x y = x - y
 %conclusion on steps taken\\developers knowledge in first step (cps sequentialize step size determination)
 \begin{block}{}
 \begin{enumerate}
- \item Desugaring and flattening of the program
+ \item Desugaring of the program
  \item Choosing step size and applying the CPS transformation
  \item Defunctionalisation of the continuations
  \item Introducing a stack for continuations
@@ -420,14 +422,14 @@ alu Sub   x y = x - y
 %  \item key choices to make, simple iterative process (potential long)
  \item Stepwise execution by merging all mutual recursive functions
 %  \item fully automated process if Ingmar's research succeeds
- \item Introduce a separate data stack for local values
+ \item Separating the data stack for local values
 %  \item determined by programming language and hardware constraints
  \item Refactor to a control stack with a program counter
 %  \item just a minor simplification and optimization
- \item Divide everything into simple orthogonal parts
+ \item Division into simple orthogonal components
 %  \item straightforward process with many choices, but all minor
 
- \item Control each component with a table of horizontal microcode
+ \item Control by a table of horizontal microcode
 %  \item this refactoring step could be automated
 % \item Create an instruction set as microcode compression
 %  \item just a pattern finding puzzle with many minor details
@@ -447,7 +449,7 @@ alu Sub   x y = x - y
 \begin{block}{A functional hardware design process}
 \begin{enumerate}
 \item Write algorithm as executable Haskell code
-\item Convert all data to fixed size variants
+\item Convert all data to fixed size
 \item Try avoid using expensive constructs %(floating point, etc.)
 \item Analyse hardware resource requirements
 \item Make area/time tradeoff to fit target platform
@@ -457,10 +459,10 @@ alu Sub   x y = x - y
 
 \begin{block}{Using Clash as hardware description language}
 \begin{itemize}
-\item A subset of Haskell that can be converted to hardware
+\item Subset of Haskell that can be compiled to hardware
 \item A Clash program describes the structure of the hardware
-\item Can use most FP abstractions for higher level code
-\item Type level numerals for fixed size things
+\item Can use most high level FP abstractions % for higher level code
+\item Fixed size datatypes with type level numerals
 \end{itemize}
 \end{block}
 
@@ -475,15 +477,15 @@ alu Sub   x y = x - y
 
 \begin{block}{Performance and hardware cost from explicit steps}
 \begin{itemize}
-\item Placing cycle boundaries sets the number of steps
-\item The slowest step determines clock frequency
-\item Doing more in step takes more parallel hardware
-\item Memory requirements depend on the ordering of steps
-\item Similar steps in program allow for hardware reuse
+\item Placing cycle boundaries $~=>~$ number of steps
+\item The slowest step $~=>~$ clock frequency
+\item More work in a step $~=>~$ more parallel hardware
+\item Ordering of steps $~=>~$  memory requirements
+\item Similar steps in program $~=>~$ hardware reuse
 \end{itemize}
 \end{block}
 
-\begin{block}{Connecting the dots between problem and solution}
+\begin{block}{The problem and solution match up}
 \begin{itemize}
 \item Manual writing control code is too much work
 \item The only choice in transformation process is where to CPS
@@ -519,7 +521,7 @@ normalize xs = do
 
 \begin{block}{}
 \begin{verbatim}
-n *. xs = mapV (n*) xs
+n *. xs = zipWithV (*) (replicateI n) xs
 xs .*. ys = zipWithV (*) xs ys
 sumV xs = treeFoldV (+) xs
 fast_invSqrt n = ...
@@ -559,15 +561,43 @@ divide x y = do
 
 \end{frame}
 
-\begin{frame}{Conclusions}
+\begin{frame}[fragile]{Simulation and transforming the SeqLogic monad}
+\begin{block}{Cycle accurate simulation of SeqLogic}
+Every cycle execute statements one by one till a $clock$ or blocking \\
+Can be simulated together with other Clash code:
+\begin{verbatim}
+interpretSeqLogic :: (forall s. SeqLogic s i o ())
+  -> Signal (Maybe i) -> Signal (Maybe o)
+\end{verbatim}
+\end{block}
+
+\begin{block}{prog2proc: a tool for generating specialised processors}
+\begin{itemize}
+\item Source (SeqLogic) to source (Clash) tranformation
+\item Using haskell-src-exts parser to extract the code
+\item Finding the type of every variable to group them
+\item Analyse livetimes of variables for memory allocation
+\item Count number of inputs/outputs/ports for ALU and memory
+\item Generate microcode table controlling all components
+\end{itemize}
+\end{block}
+
+\end{frame}
+
+\begin{frame}{Summary}
 %\framesubtitle{a processor is a thing that executes programs in many bounded steps}
 
 \begin{itemize}
 \item Specialisation of hardware is required for improving efficiency
+\item Going from program to processor uses well known transformations
 \item Reusing hardware over time yields a processor like architecture
-\item Going program to processor uses well known transformations
 \item Cycle boundaries are the key choice in hardware design
+\item The rest of the transformations are easily automated
+\item A sequential EDSL for Haskell based hardware design process
+%\item Five times less control code than manual hardware description
 \end{itemize}
+
+\alert{Why waste time on compilers for 'unprogrammable' hardware \\ if you can just generate hardware instead?}
 
 \end{frame}
 
@@ -600,37 +630,23 @@ divide x y = do
 %question for audience: how to combine explicit execution steps with higher level FP abstractions
 \end{frame}
 
-
-\begin{frame}[fragile]{Simulation and transforming the SeqLogic monad}
-\begin{block}{Cycle accurate simulation of SeqLogic}
-Every cycle execute statements one by one till a $clock$ or blocking \\
-Can be simulated together with other Clash code:
-\begin{verbatim}
-interpretSeqLogic :: (forall s. SeqLogic s i o ())
-  -> Signal (Maybe i) -> Signal (Maybe o)
-\end{verbatim}
-\end{block}
-
-\begin{block}{prog2proc: a tool for generating specialised processors}
-\begin{itemize}
-\item Source (SeqLogic) to source (Clash) tranformation
-\item Using haskell-src-exts parser to extract the code
-\item Find the type of every variable to group them
-\item Analyse livetimes of variables for memory allocation
-\item Find number of inputs/outputs/ports for ALU and memory
-\item Generate microcode table controlling all components
-\end{itemize}
-\end{block}
-
-\end{frame}
-
 \begin{frame}{Practical testcase: the iterative closest point algorithm}
+\begin{block}{Matching scan points from a laser range finder}
+for each point find 2 closest points in other scan \\
+build system of equations using normal vectors \\ 
+solve the system using QR decomposition
+\end{block}
 
-%missing segmented vector and software pipelining
+\begin{block}{Our experience with using the EDSL}
+Five times less control code than manual hardware description \\
+Sequentialising incrementally saves a lot of debugging \\
+missing segmented vectors and software pipelining
+\end{block}
+
 \end{frame}
 
 
-\begin{frame}[fragile]{An example with lot of other features}
+\begin{frame}[fragile]{The most complex part of our ICP code}
 % icp example -> vectorizing \\ clash?
 \begin{block}{}
 \begin{verbatim}
@@ -656,6 +672,41 @@ Using inline functions, zero overhead loops and explicit memory
 
 \end{frame}
 
+\begin{frame}[fragile]{Another piece of the ICP code}
+\begin{scriptsize}
+\begin{verbatim}
+  loop 0 upto (180-1) $ \i -> do
+    let pointX = vecPx!!i
+    let vecDx = pointX -. vecQx
+    clock
+    let pointY = vecPy!!i
+    let vecDy = pointY -. vecQy
+    clock
+    vecMagSq <- vecDx.*.vecDx |^(.+.)^| vecDy.*.vecDy
+    clock
+    let (j,k) = indexSmallestTwo vecMagSq
+    normLV <- start normLineVec
+    clock
+    let px  = vecPx!!i
+    let mxA = vecQx!!j
+    let mxB = vecQx!!k
+    inject normLV (px, mxA, mxB)
+    vecMx?i <~ mxA
+    clock
+    let py  = vecPy!!i
+    let myA = vecQy!!j
+    let myB = vecQy!!k
+    inject normLV (py, myA, myB)
+    vecMy?i <~ myA
+    clock
+    vecNx?i <~< extract normLV
+    clock
+    vecNy?i <~< finish normLV
+\end{verbatim}
+\end{scriptsize}
+
+
+\end{frame}
 
 
 \end{document}
