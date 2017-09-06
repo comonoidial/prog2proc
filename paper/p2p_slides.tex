@@ -34,7 +34,7 @@
 \item All hardware is constrained by energy %(battery/electricity bill)
 \item No more gains in clock frequency % (too much heat)
 \item More parallelism is hard to find %and has diminishing returns
-\item Energy efficient performance requires specialisation
+\item Alternative is specialisation for energy efficient performance
 \end{itemize}
 \end{block}
 
@@ -43,7 +43,7 @@
 \item FPGAs are chips that can be 'rewired' to any hardware design
 %\item Can contain 100s of multipliers and 10s MB of memory
 \item Large size of current FPGAs allow for complex computations
-%\item Avoiding the slow and expensive custom chip production
+\item Avoiding the slow and expensive custom chip production
 \item Slower than custom hardware but can be more specialized
 \end{itemize}
 \end{block}
@@ -53,16 +53,16 @@
 
 
 \begin{frame}{What makes hardware different from software?}
-Hardware is a bounded box of computations with fixed in/outputs %, and internally it is a graph of smaller hardware components
+Hardware is a bounded box of computations with fixed in/outputs, and internally it is a graph of smaller hardware components
 \begin{center}
 \includegraphics[scale=0.6]{schematic}
 \end{center}
-\pause
+
 \begin{block}{Consequences for writing hardware as programs}
 \begin{itemize}
 \item No dynamic recursion or unbounded loops
 \item All data is fixed size, no higher order functions
-\item \alert{Too large means splitting in steps to reuse hardware over time}
+\item Too large means splitting in steps to reuse hardware over time
 \end{itemize}
 \end{block}
 \end{frame}
@@ -170,7 +170,7 @@ data Cont
   ....
 \end{verbatim}
 \end{block}
-\pause
+
 \begin{block}{}
 \begin{small}
 \begin{verbatim}
@@ -217,26 +217,23 @@ cont g (CC x y a b:cs) = cont (min a b) (CD x y a b g:cs)
 \begin{frame}[fragile]{From mutual recursion to a single step function}
 \begin{block}{}
 \begin{verbatim}
-data Call = GCD Word32 Word32
-          | DropZs Word32
-          | CntZs Word32
-          | Cont Word32
+data Call = GCD Word32 Word32 | DropZs Word32
+          | CntZs Word32 | Cont Word32
 \end{verbatim}
 \end{block}
-\pause
 \begin{block}{}
 \begin{verbatim}
 step :: Call -> Stack -> (Call, Stack)
 step (GCD x y)        cs = if y == 0
-  then (Cont x      , cs             )
-  else (DropZs x    , CA x y     : cs)
-step (Cont a)        (CA x y     : cs) =
-     (DropZs y      , CB x y a   : cs)
-step (Cont b)        (CB x y a   : cs) =
-     (Cont (max a b), CC x y a b : cs)
+  then (Cont x      , cs               )
+  else (DropZs x    , CA x y       : cs)
+step (Cont a)        (CA x y       : cs) =
+     (DropZs y      , CB x y a     : cs)
+step (Cont b)        (CB x y a     : cs) =
+     (Cont (max a b), CC x y a b   : cs)
+step (Cont g)        (CC x y a b   : cs) =
+     (Cont (min a b), CD x y a b g : cs)
 \end{verbatim}
-%step (Cont g)        (CC x y a b   : cs) =
-%     (Cont (min a b), CD x y a b g : cs)
 \end{block}
 \end{frame}
 
@@ -276,7 +273,7 @@ step (Cont g)       (CC x y a b  :cs) =
 \begin{block}{}
 \begin{verbatim}
 step :: State -> CtrlStack -> DataStack ->
-       (State ,  CtrlStack ,  DataStack)
+       (State, CtrlStack, DataStack)
 step Cont    (CA:cs)       (a:y:x:ds) = 
     (DropZs,  CB:cs,      y:a:y:x:ds)
 step Cont    (CB:cs)     (b:a:y:x:ds) = 
@@ -292,8 +289,8 @@ step Cont    (CC:cs)   (g:b:a:y:x:ds) =
 \begin{small}
 \begin{verbatim}
 data Label = BinGCD | T1 | E1 | CA | CB | CC | ...
+type CtrlFun = Bool->Label->CtrlStack->(Label,CtrlStack)
 \end{verbatim}
-%type CtrlFun = Bool->Label->CtrlStack->(Label,CtrlStack)
 \end{small}
 \end{block}
 
@@ -317,13 +314,13 @@ step CB        (b:a:y:x:ds) =
 
 
 \begin{frame}[fragile]{Splitting into components}
-%\begin{block}{}
-%\begin{verbatim}
-%step :: Label -> DataStack -> (CtrlFun,DataStack)
-%step CA          (a:y:x:ds) = 
-%  (call DropZs, y:a:y:x:ds)
-%\end{verbatim}
-%\end{block}
+\begin{block}{}
+\begin{verbatim}
+step :: Label -> DataStack -> (CtrlFun,DataStack)
+step CA          (a:y:x:ds) = 
+  (call DropZs, y:a:y:x:ds)
+\end{verbatim}
+\end{block}
 
 \begin{block}{}
 \begin{verbatim}
@@ -333,12 +330,8 @@ step T1  = (ret        ,peek 1,lit 0 , pass ,popNPush 2)
 step E1  = (call DropZs,peek 1,lit 0 , pass ,push)
 step CA  = (call DropZs,peek 1,lit 0 , pass ,push)
 step CB  = (next       ,peek 1,peek 0, max  ,push)
-step CC  = (next       ,peek 2,peek 1, min  ,push)
-step CD  = (call BinGCD,peek 1,peek 0, (-)  ,push)
 \end{verbatim}
-\end{block}
 
-\begin{block}{}
 \begin{verbatim}type Input = DataStack -> Word32
 type AluOp = Word32 -> Word32 -> Word32
 type StackMod = Word32 -> DataStack -> DataStack
@@ -347,31 +340,29 @@ type StackMod = Word32 -> DataStack -> DataStack
 \end{frame}
 
 \begin{frame}[fragile]{Using microcode to control each component}
+\begin{block}{}
+\begin{verbatim}
+microcode :: Label -> (Ctrl,Input,Input,AluOp,StAction)
+microcode pc = case pc of
+  BinGCD -> (Branch E1  , S 0, I 0, IsEq , Keep)
+  T1     -> (Return     , S 1, I 0, Pass , PopNPush 2)
+  E1     -> (Call DropZs, S 1, I 0, Pass , Push)
+  CA     -> (Call DropZs, S 1, I 0, Pass , Push)
+  CB     -> (Next       , S 1, S 0, Max  , Push)
+  CC     -> (Next       , S 2, S 1, Min  , Push)
+\end{verbatim}
+\end{block}
 
 \begin{block}{}
 \begin{verbatim}
 data AluOp = Pass | Add | Sub | Or | Min | ...
+
 alu :: AluOp -> Word32 -> Word32 -> Word32
 alu Pass  x _ = x
 alu Add   x y = x + y
 alu Sub   x y = x - y
-...
 \end{verbatim}
 \end{block}
-\pause
-\begin{block}{}
-\begin{verbatim}
-microcode :: Label ->(Ctrl,Input,Input,AluOp,StAction)
-microcode pc = case pc of
-  BinGCD -> (Branch E1  , S 0, I 0, IsEq, Keep)
-  T1     -> (Return     , S 1, I 0, Pass, PopNPush 2)
-  E1     -> (Call DropZs, S 1, I 0, Pass, Push)
-  CA     -> (Call DropZs, S 1, I 0, Pass, Push)
-  CB     -> (Next       , S 1, S 0, Max , Push)
-  CC     -> (Next       , S 2, S 1, Min , Push)
-\end{verbatim}
-\end{block}
-
 
 \end{frame}
 
@@ -416,33 +407,31 @@ microcode pc = case pc of
 \end{frame}
 
 
-\begin{frame}{From program to 'processor' in just 10 steps}
-\framesubtitle{refactoring driven by hardware limitations}
-%\framesubtitle{using only basic hardware principles and well known transformations}
+\begin{frame}{From program to 'processor' in just 10 transformation steps}
+\framesubtitle{using only basic hardware principles and well known transformations}
 %conclusion on steps taken\\developers knowledge in first step (cps sequentialize step size determination)
 \begin{block}{}
 \begin{enumerate}
- \item Desugaring of the program
+ \item Desugaring and flattening of the program
  \item Choosing step size and applying the CPS transformation
  \item Defunctionalisation of the continuations
  \item Introducing a stack for continuations
 % \item Splitting the program in instruction sized parts
 %  \item key choices to make, simple iterative process (potential long)
  \item Stepwise execution by merging all mutual recursive functions
- \pause
 %  \item fully automated process if Ingmar's research succeeds
- \item Separating the data stack for local values
+ \item Introduce a separate data stack for local values
 %  \item determined by programming language and hardware constraints
  \item Refactor to a control stack with a program counter
 %  \item just a minor simplification and optimization
- \item Division into simple orthogonal components
+ \item Divide everything into simple orthogonal parts
 %  \item straightforward process with many choices, but all minor
 
- \item Control by a table of horizontal microcode
+ \item Control each component with a table of horizontal microcode
 %  \item this refactoring step could be automated
 % \item Create an instruction set as microcode compression
 %  \item just a pattern finding puzzle with many minor details
- \item Connect the hardware components in Clash
+ \item Making the hardware description synthesizable
 % \item Final step bonus step: introduce pipelining?
 \end{enumerate}
 \end{block}
@@ -458,20 +447,20 @@ microcode pc = case pc of
 \begin{block}{A functional hardware design process}
 \begin{enumerate}
 \item Write algorithm as executable Haskell code
-\item Convert all data to fixed size
+\item Convert all data to fixed size variants
 \item Try avoid using expensive constructs %(floating point, etc.)
 \item Analyse hardware resource requirements
 \item Make area/time tradeoff to fit target platform
-\item \alert{Write control/glue logic for computation over time}
+\item Write control/glue logic for computation over time
 \end{enumerate}
 \end{block}
 
 \begin{block}{Using Clash as hardware description language}
 \begin{itemize}
-\item Subset of Haskell that can be compiled to hardware
+\item A subset of Haskell that can be converted to hardware
 \item A Clash program describes the structure of the hardware
-\item Can use most high level FP abstractions % for higher level code
-\item Fixed size datatypes with type level numerals
+\item Can use most FP abstractions for higher level code
+\item Type level numerals for fixed size things
 \end{itemize}
 \end{block}
 
@@ -486,15 +475,15 @@ microcode pc = case pc of
 
 \begin{block}{Performance and hardware cost from explicit steps}
 \begin{itemize}
-\item Placing cycle boundaries $\implies$ number of steps
-\item The slowest step $\implies$ clock frequency
-\item More work in a step $\implies$ more parallel hardware
-\item Ordering of steps $\implies$  memory requirements
-\item Similar steps in program $\implies$ hardware reuse
+\item Placing cycle boundaries sets the number of steps
+\item The slowest step determines clock frequency
+\item Doing more in step takes more parallel hardware
+\item Memory requirements depend on the ordering of steps
+\item Similar steps in program allow for hardware reuse
 \end{itemize}
 \end{block}
-\pause
-\begin{block}{The problem and solution match up}
+
+\begin{block}{Connecting the dots between problem and solution}
 \begin{itemize}
 \item Manual writing control code is too much work
 \item The only choice in transformation process is where to CPS
@@ -511,7 +500,7 @@ microcode pc = case pc of
 %----------------------------------------------------------------------------------------
 %	Seqlogic 
 
-\begin{frame}[fragile]{The sequential logic monad with explicit clock cycles}
+\begin{frame}[fragile]{The sequential logic monad with explict clock cycles}
 \framesubtitle{used both for simulation and hardware generation}
 \begin{block}{}
 \begin{verbatim}
@@ -530,7 +519,7 @@ normalize xs = do
 
 \begin{block}{}
 \begin{verbatim}
-n *. xs = zipWithV (*) (replicateI n) xs
+n *. xs = mapV (n*) xs
 xs .*. ys = zipWithV (*) xs ys
 sumV xs = treeFoldV (+) xs
 fast_invSqrt n = ...
@@ -543,9 +532,9 @@ fast_invSqrt n = ...
 %	Seqlogic threads
 
 \begin{frame}[fragile]{Concurrent execution as coprocessors in hardware}
-\begin{block}{Problem: keeping hardware busy with a slow computation}
+\begin{block}{Problem: keep hardware busy when doing a slow computation}
 Interleaving multiple computation cycle by cycle is a mess \\
-Solution: fork off slow computation as separate 'thread'
+Solution: fork off slow computation as seperate 'thread'
 \end{block}
 
 \begin{block}{}
@@ -554,7 +543,7 @@ Solution: fork off slow computation as separate 'thread'
   divider <- start (divide x y)
   clock
   ...
-  -- doing other computations
+  
   ...
   clock
   d <- finish divider
@@ -570,44 +559,15 @@ divide x y = do
 
 \end{frame}
 
-\begin{frame}[fragile]{Simulation and transforming the SeqLogic monad}
-\begin{block}{Cycle accurate simulation of SeqLogic}
-Every cycle executes statements one by one till a $clock$ or blocking \\
-Can be simulated together with other Clash code:
-\begin{verbatim}
-interpretSeqLogic :: (forall s. SeqLogic s i o ())
-  -> Signal (Maybe i) -> Signal (Maybe o)
-\end{verbatim}
-\end{block}
-
-\begin{block}{prog2proc: a tool for generating specialised processors}
-\begin{itemize}
-\item Source (SeqLogic) to source (Clash) transformation
-\item Using haskell-src-exts parser to extract the code
-\item Finding the type of every variable to group them
-\item Analyse lifetimes of variables for memory allocation
-\item Count number of inputs/outputs/ports for ALU and memory
-\item Generate microcode table controlling all components
-\end{itemize}
-\end{block}
-
-\end{frame}
-
-\begin{frame}{Summary}
+\begin{frame}{Conclusions}
 %\framesubtitle{a processor is a thing that executes programs in many bounded steps}
-\begin{block}{}
+
 \begin{itemize}
 \item Specialisation of hardware is required for improving efficiency
-\item Going from program to processor uses known transformations
 \item Reusing hardware over time yields a processor like architecture
+\item Going program to processor uses well known transformations
 \item Cycle boundaries are the key choice in hardware design
-\item The rest of the transformations are easily automated
-\item A sequential EDSL in Haskell for hardware designers
-%\item Five times less control code than manual hardware description
 \end{itemize}
-\end{block}
-\vspace{2em}
-\alert{Why waste time on compilers for 'unprogrammable' hardware \\ if you can just generate hardware instead?}
 
 \end{frame}
 
@@ -618,7 +578,7 @@ interpretSeqLogic :: (forall s. SeqLogic s i o ())
 \begin{itemize}
 \item Start from language semantics instead of specific programs
 \item Can we calculate compilers and processors from semantics?
-\item Extend transformations for other language features %(memory/complex control flow)
+\item Extend transfromations for other language features %(memory/complex control flow)
 \item Identify software equivalents for hardware optimisations
 \end{itemize}
 \end{block}
@@ -640,30 +600,37 @@ interpretSeqLogic :: (forall s. SeqLogic s i o ())
 %question for audience: how to combine explicit execution steps with higher level FP abstractions
 \end{frame}
 
-\begin{frame}{Practical testcase: the iterative closest point algorithm}
-\begin{block}{Matching scan points from a laser range finder}
-\begin{itemize}
-\item For each point find 2 closest points in other scan
-\item Build system of equations using normal vectors 
-\item Attempt to solve the system using QR decomposition
-\item Shift/rotate the scan given the solution
-\end{itemize}
+
+\begin{frame}[fragile]{Simulation and transforming the SeqLogic monad}
+\begin{block}{Cycle accurate simulation of SeqLogic}
+Every cycle execute statements one by one till a $clock$ or blocking \\
+Can be simulated together with other Clash code:
+\begin{verbatim}
+interpretSeqLogic :: (forall s. SeqLogic s i o ())
+  -> Signal (Maybe i) -> Signal (Maybe o)
+\end{verbatim}
 \end{block}
 
-\begin{block}{Our experience with using the EDSL}
+\begin{block}{prog2proc: a tool for generating specialised processors}
 \begin{itemize}
-\item Five times less control code than manual hardware description
-\item Sequentialising incrementally saves a lot of debugging
-\item Easy to express most time/area tradeoffs
-\item However lacking segmented vectors and software pipelining
-\item Still looks too much like imperative code for our taste
+\item Source (SeqLogic) to source (Clash) tranformation
+\item Using haskell-src-exts parser to extract the code
+\item Find the type of every variable to group them
+\item Analyse livetimes of variables for memory allocation
+\item Find number of inputs/outputs/ports for ALU and memory
+\item Generate microcode table controlling all components
 \end{itemize}
 \end{block}
 
 \end{frame}
 
+\begin{frame}{Practical testcase: the iterative closest point algorithm}
 
-\begin{frame}[fragile]{The most complex part of our ICP code}
+%missing segmented vector and software pipelining
+\end{frame}
+
+
+\begin{frame}[fragile]{An example with lot of other features}
 % icp example -> vectorizing \\ clash?
 \begin{block}{}
 \begin{verbatim}
@@ -689,41 +656,6 @@ Using inline functions, zero overhead loops and explicit memory
 
 \end{frame}
 
-\begin{frame}[fragile]{Another piece of the ICP code}
-\begin{footnotesize}
-\begin{verbatim}
-  loop 0 upto (180-1) $ \i -> do
-    let pointX = vecPx!!i
-    let vecDx = pointX -. vecQx
-    clock
-    let pointY = vecPy!!i
-    let vecDy = pointY -. vecQy
-    clock
-    vecMagSq <- vecDx.*.vecDx |^(.+.)^| vecDy.*.vecDy
-    clock
-    let (j,k) = indexSmallestTwo vecMagSq
-    normLV <- start normLineVec
-    clock
-    let px  = vecPx!!i
-    let mxA = vecQx!!j
-    let mxB = vecQx!!k
-    inject normLV (px, mxA, mxB)
-    vecMx?i <~ mxA
-    clock
-    let py  = vecPy!!i
-    let myA = vecQy!!j
-    let myB = vecQy!!k
-    inject normLV (py, myA, myB)
-    vecMy?i <~ myA
-    clock
-    vecNx?i <~< extract normLV
-    clock
-    vecNy?i <~< finish normLV
-\end{verbatim}
-\end{footnotesize}
-
-
-\end{frame}
 
 
 \end{document}
