@@ -7,7 +7,10 @@ import Control.Applicative
 import Control.Monad
 import Control.Monad.ST.Lazy
 
-import Prog2Proc.Signal
+--import Prog2Proc.Signal
+import CLaSH.Prelude hiding ((++), splitAt, replicate)
+import CLaSH.Signal.Internal
+import Prelude ((++), splitAt, replicate)
 
 type SeqLogic s i o a = Program (SeqAction s i o) a
 
@@ -39,7 +42,7 @@ data SeqAction s i o a where
    Receive :: SeqAction s i o i
    Emit    :: a -> SeqAction s i a ()
    Alloc   :: a -> SeqAction s i o (Reference s a)
-   AllocArr:: Int -> SeqAction s i o (Reference s [a])
+--   AllocArr:: Int -> SeqAction s i o (Reference s (Vec n a))
    Load    :: Reference s a -> SeqAction s i o a
    Store   :: Reference s a -> a -> SeqAction s i o ()
    Start   :: SeqLogic s j p a -> SeqAction s i o (Coproc s j p a)
@@ -47,9 +50,13 @@ data SeqAction s i o a where
    Infuse  :: Coproc s j p x -> j -> SeqAction s i o ()
    Extract :: Coproc s j a x -> SeqAction s i o a
 
-data Reference s a = Ref (STRef s a) | ArrRef (STRef s a) | IxRef Int (Reference s [a])
+--data Reference s a = Ref (STRef s a) | ArrRef (STRef s a) | IxRef Int (forall n . Reference s (Vec n a))
+data Reference s a where
+   Ref :: (STRef s a) -> Reference s a
+   IxRef :: KnownNat n => Int -> (Reference s (Vec n a)) -> Reference s a
 
-indexRef :: Int -> Reference s [a] -> Reference s a
+--indexRef :: Int -> (forall n . Reference s (Vec n a)) -> Reference s a
+indexRef :: KnownNat n => Int -> Reference s (Vec n a) -> Reference s a
 indexRef = IxRef
 
 newtype Coproc s j p a = Coproc (STRef s (CoProStatus, Maybe j, Maybe p, SeqLogic s j p a))
@@ -87,9 +94,9 @@ interpretCycle (mi, mo) cps (Emit x `Then` r) = case mo of
 interpretCycle (mi, mo) cps (Alloc i `Then` r) = do
    p <- newSTRef i
    interpretCycle (mi, mo) cps (r (Ref p))
-interpretCycle (mi, mo) cps (AllocArr n `Then` r) = do
-   p <- newSTRef (replicate n undefined)
-   interpretCycle (mi, mo) cps (r (ArrRef p))
+--interpretCycle (mi, mo) cps (AllocArr n `Then` r) = do
+--   p <- newSTRef (replicate n undefined)
+--   interpretCycle (mi, mo) cps (r (ArrRef p))
 interpretCycle (mi, mo) cps (Load p `Then` r) = do
    x <- readRef p
    interpretCycle (mi, mo) cps (r x)
@@ -145,16 +152,18 @@ runCoproCycle (CoproElem (Coproc cp)) = do
 
 readRef :: Reference s a -> ST s a
 readRef (Ref r) = readSTRef r
-readRef (IxRef i (ArrRef r)) = fmap (!!i) (readSTRef r)
+--readRef (IxRef i (ArrRef r)) = fmap (!!i) (readSTRef r)
 readRef (IxRef i r) = fmap (!!i) (readRef r)
-readRef (ArrRef _) = error "arrays can only be read per element"
+--readRef (ArrRef _) = error "arrays can only be read per element"
 
 writeRef :: Reference s a -> a -> ST s ()
 writeRef (Ref r) x = writeSTRef r x
-writeRef (IxRef i r) x = modifyRef r ((\(xs, _:ys) -> xs ++ x : ys) . splitAt i)
-writeRef (ArrRef _) x = error "arrays can only be written per element"
+--writeRef (IxRef i r) x = modifyRef r ((\(xs, _:ys) -> xs ++ x : ys) . splitAt i)
+writeRef (IxRef i r) x = modifyRef r (replace i x)
+--writeRef (ArrRef _) x = error "arrays can only be written per element"
 
 modifyRef :: Reference s a -> (a -> a) -> ST s ()
 modifyRef (Ref r) f = modifySTRef r f
-modifyRef (IxRef i r) f = modifyRef r ((\(xs, x:ys) -> xs ++ f x : ys) . splitAt i)
-modifyRef (ArrRef r) f = modifySTRef r f
+--modifyRef (IxRef i r) f = modifyRef r ((\(xs, x:ys) -> xs ++ f x : ys) . splitAt i)
+modifyRef (IxRef i r) f = modifyRef r (\xs -> replace i (f (xs!!i)) xs)
+--modifyRef (ArrRef r) f = modifySTRef r f

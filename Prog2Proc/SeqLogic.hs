@@ -4,13 +4,14 @@ module Prog2Proc.SeqLogic where
 import Control.Applicative
 import Control.Monad
 
-import Prog2Proc.Signal
+--import Prog2Proc.Signal
+import CLaSH.Prelude
 import Prog2Proc.Interpreter hiding (SeqLogic)
 
 type SeqLogic s i o a = Program (SeqAction s i o) a
 
 simulateSeq :: (forall s. SeqLogic s i o ()) -> [Maybe i] -> [Maybe o]
-simulateSeq prog = simulate (interpretSeqLogic $ forever prog)
+simulateSeq prog = simulate_lazy (interpretSeqLogic $ forever prog)
 
 -- marks the boundary of a clock cycle
 clock :: SeqLogic s i o ()
@@ -58,8 +59,8 @@ type Ref s a = Reference s a
 alloc :: a -> SeqLogic s i o (Ref s a)
 alloc = command . Alloc
 
-allocArr :: Int -> SeqLogic s i o (Ref s [a])
-allocArr = command . AllocArr
+--allocArr :: Int -> SeqLogic s i o (Ref s [a])
+--allocArr = command . AllocArr
 
 peek :: Ref s a -> SeqLogic s i o a
 peek = command . Load
@@ -75,7 +76,8 @@ infixr 1 <~
 (<~) p x = command (Store p x)
 
 infixl 4 ?
-(?) :: Ref s [a] -> Int -> Ref s a
+--(?) :: Ref s (Vec n a) -> Int -> Ref s a
+(?) :: KnownNat n => Reference s (Vec n a) -> Int -> Reference s a
 r ? i = indexRef i r
 
 start :: SeqLogic s j p a -> SeqLogic s i o (Coproc s j p a)
@@ -118,27 +120,27 @@ loop n Down m body
   | n >= m     = clock >> body n >> loop (pred n) Down m body
   | otherwise = clock >> return ()
 
-mapS :: (a -> b) -> [[a]] -> SeqLogic s i o [[b]]
-mapS f [] = return []
-mapS f (x:xs) = do
-   clock
-   let y = map f x
-   ys <- mapS f xs
-   return (y:ys)
-
-zipWithS :: (a -> b -> c) -> [[a]] -> [[b]] -> SeqLogic s i o [[c]]
-zipWithS f (x:xs) (y:ys) = do
-   clock
-   let z = zipWith f x y
-   zs <- zipWithS f xs ys
-   return (z:zs)
-
-foldS :: (b -> a -> b) -> b -> [[a]] -> SeqLogic s i o b
-foldS f z [] = return z
-foldS f z (x:xs) = do
-   clock
-   let y = foldl f z x
-   foldS f y xs
-
+--mapS :: (a -> b) -> [[a]] -> SeqLogic s i o [[b]]
+--mapS f [] = return []
+--mapS f (x:xs) = do
+--   clock
+--   let y = map f x
+--   ys <- mapS f xs
+--   return (y:ys)
+--
+--zipWithS :: (a -> b -> c) -> [[a]] -> [[b]] -> SeqLogic s i o [[c]]
+--zipWithS f (x:xs) (y:ys) = do
+--   clock
+--   let z = zipWith f x y
+--   zs <- zipWithS f xs ys
+--   return (z:zs)
+--
+--foldS :: (b -> a -> b) -> b -> [[a]] -> SeqLogic s i o b
+--foldS f z [] = return z
+--foldS f z (x:xs) = do
+--   clock
+--   let y = foldl f z x
+--   foldS f y xs
+--
 -- v <^ f = liftM2 f v
 -- f ^> v = f v
